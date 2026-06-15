@@ -3,6 +3,8 @@
 // ============================================================
 // 职责：对接新浪/东方财富公开 API，获取行情和基本面数据。
 // 所有网络请求由 Next.js API 路由代理，前端不直接调用外部 API。
+//
+// 注意：新浪财经返回 GBK 编码的中文，需通过东方财富（JSON/UTF-8）获取股票名称。
 
 import type { StockCode, StockQuote, StockFundamentals, StockData } from "./types";
 import { getSinaPrefix, getEastMoneySecId } from "./constants";
@@ -58,7 +60,18 @@ export async function fetchSinaQuotes(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     },
   });
-  const text = await res.text();
+
+  // 新浪返回 GBK 编码，Node.js fetch 默认用 UTF-8 解码会乱码。
+  // 尝试用 GBK 解码原始字节，失败时回退到默认解码（名称随后用东方财富的数据覆盖）。
+  let text: string;
+  try {
+    const buffer = await res.arrayBuffer();
+    text = new TextDecoder("gbk").decode(buffer);
+  } catch {
+    // TextDecoder("gbk") 不受支持时回退到默认解码
+    text = await res.text();
+  }
+
   const parsed = parseSinaResponse(text);
   const result = new Map<string, StockQuote>();
 
@@ -88,21 +101,33 @@ export async function fetchSinaQuotes(
   return result;
 }
 
-// ─── 东方财富 API（基本面）─────────────────────────────────────
+// ─── 东方财富 API（基本面 + 股票名称）───────────────────────────
 
-/** 解析东方财富 JSONP 返回 */
+/** 东方财富 API 返回的原始数据项 */
+interface EastMoneyItem {
+  f12?: string;  // 代码
+  f14?: string;  // 名称
+  f20?: number;  // 总市值
+  f21?: number;  // 动态市盈率
+  f23?: number;  // 市净率
+  f37?: number;  // 股息率
+}
+
+/** 解析东方财富 JSONP 返回，提取基本面和名称 */
 function parseEastMoneyResponse(
   json: any,
   codes: StockCode[]
-): Map<string, StockFundamentals> {
-  const map = new Map<string, StockFundamentals>();
-  if (!json?.data?.diff) return map;
+): { fundamentals: Map<string, StockFundamentals>; names: Map<string, string> } {
+  const fundamentals = new Map<string, StockFundamentals>();
+  const names = new Map<string, string>();
 
-  json.data.diff.forEach((item: any) => {
+  if (!json?.data?.diff) return { fundamentals, names };
+
+  json.data.diff.forEach((item: EastMoneyItem) => {
     const code: string = item.f12 ?? "";
     if (!code || !codes.includes(code)) return;
 
-    map.set(code, {
+    fundamentals.set(code, {
       pe: item.f21 != null ? parseFloat(item.f21) : null,
       pb: item.f23 != null ? parseFloat(item.f23) : null,
       marketCap: item.f20 != null
@@ -112,9 +137,14 @@ function parseEastMoneyResponse(
         ? parseFloat(item.f37.toFixed(2))
         : null,
     });
+
+    // 东方财富返回 JSON，编码为 UTF-8，股票名称可以正确显示
+    if (item.f14) {
+      names.set(code, item.f14);
+    }
   });
 
-  return map;
+  return { fundamentals, names };
 }
 
 /** 构建东方财富 API URL */
@@ -125,10 +155,10 @@ export function buildEastMoneyUrl(codes: StockCode[]): string {
   return `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f12,f14,f20,f21,f23,f37&secids=${secids}`;
 }
 
-/** 从东方财富获取基本面（服务端使用） */
+/** 从东方财富获取基本面和名称（服务端使用） */
 export async function fetchEastMoneyFundamentals(
   codes: StockCode[]
-): Promise<Map<string, StockFundamentals>> {
+): Promise<{ fundamentals: Map<string, StockFundamentals>; names: Map<string, string> }> {
   const url = buildEastMoneyUrl(codes);
   const res = await fetch(url, {
     headers: {
@@ -147,20 +177,26 @@ export async function fetchEastMoneyFundamentals(
 export async function fetchFullStockData(
   codes: StockCode[]
 ): Promise<StockData[]> {
-  const [quotesMap, fundsMap] = await Promise.all([
+  const [quotesMap, eastMoneyResult] = await Promise.all([
     fetchSinaQuotes(codes),
     fetchEastMoneyFundamentals(codes),
   ]);
 
   return codes
     .filter((code) => quotesMap.has(code))
-    .map((code) => ({
-      quote: quotesMap.get(code)!,
-      fundamentals: fundsMap.get(code) ?? {
+    .map((code) => {
+      const quote = quotesMap.get(code)!;
+      const name = eastMoneyResult.names.get(code) || quote.name;
+      const fundamentals = eastMoneyResult.fundamentals.get(code) ?? {
         pe: null,
         pb: null,
         marketCap: null,
         dividendYield: null,
-      },
-    }));
+      };
+
+      return {
+        quote: { ...quote, name },
+        fundamentals,
+      };
+    });
 }
