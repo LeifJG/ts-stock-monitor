@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFullStockData } from "@/lib/stock-api";
-import type { ApiResponse, StockData, StockCode } from "@/lib/types";
+import type { StockApiResponse, StockData, StockCode } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const codesParam = request.nextUrl.searchParams.get("codes");
     if (!codesParam) {
-      return NextResponse.json<ApiResponse<StockData[]>>(
+      return NextResponse.json<StockApiResponse<StockData[]>>(
         { success: false, error: "请提供 codes 参数，如 ?codes=600519,000858" },
         { status: 400 }
       );
@@ -26,14 +26,14 @@ export async function GET(request: NextRequest) {
       .filter(Boolean);
 
     if (codes.length === 0) {
-      return NextResponse.json<ApiResponse<StockData[]>>(
+      return NextResponse.json<StockApiResponse<StockData[]>>(
         { success: false, error: "codes 参数为空" },
         { status: 400 }
       );
     }
 
     if (codes.length > 50) {
-      return NextResponse.json<ApiResponse<StockData[]>>(
+      return NextResponse.json<StockApiResponse<StockData[]>>(
         { success: false, error: "单次最多查询 50 只股票" },
         { status: 400 }
       );
@@ -41,13 +41,13 @@ export async function GET(request: NextRequest) {
 
     const data = await fetchFullStockData(codes);
 
-    return NextResponse.json<ApiResponse<StockData[]>>(
+    return NextResponse.json<StockApiResponse<StockData[]>>(
       { success: true, data },
       { status: 200 }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "未知错误";
-    return NextResponse.json<ApiResponse<StockData[]>>(
+    return NextResponse.json<StockApiResponse<StockData[]>>(
       { success: false, error: message },
       { status: 500 }
     );

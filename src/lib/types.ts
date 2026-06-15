@@ -38,12 +38,43 @@ export interface StockFundamentals {
   pb: number | null;            // 市净率
   marketCap: number | null;     // 总市值
   dividendYield: number | null; // 股息率 (%)
+  turnoverRate: number | null;  // 换手率 (%)
+  eps: number | null;           // 每股收益
+  bvps: number | null;          // 每股净资产
+}
+
+/** 安全边际评分 */
+export interface SafetyScore {
+  grahamNumber: number | null;   // 格雷厄姆估值（元）
+  marginOfSafety: number | null; // 安全边际百分比 (%)
+  score: number | null;          // 评分 0-100
+  grade: SafetyGrade;            // 等级
+}
+
+export type SafetyGrade = "优秀" | "良好" | "一般" | "危险" | "未知";
+
+/** 单只股票的恐慌指数 0-100（0=极度贪婪，100=极度恐慌） */
+export interface FearGauge {
+  overall: number;              // 综合恐慌指数
+  drawdown: number;             // 距52周高点跌幅贡献分
+  rsi: number;                  // RSI 贡献分
+  macd: number;                 // MACD 贡献分
+  label: string;                // 中文标签
 }
 
 /** 单只股票的完整数据 */
 export interface StockData {
   quote: StockQuote;
   fundamentals: StockFundamentals;
+  safetyScore?: SafetyScore;    // 安全边际评分
+  fearGauge?: FearGauge;       // 恐慌指数
+}
+
+/** API 返回格式 */
+export interface StockApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
 }
 
 /** 告警规则的操作符 */
@@ -86,11 +117,4 @@ export interface UserConfig {
   watchlist: StockCode[];        // 自选股列表
   refreshInterval: number;       // 刷新间隔（秒）
   alertRules: AlertRule[];
-}
-
-/** API 返回格式 */
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
 }

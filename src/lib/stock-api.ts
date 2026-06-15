@@ -8,6 +8,7 @@
 
 import type { StockCode, StockQuote, StockFundamentals, StockData } from "./types";
 import { getSinaPrefix, getEastMoneySecId } from "./constants";
+import { calcSafetyScore, calcFearGauge } from "./indicators";
 
 // ─── 新浪财经 API（实时行情）────────────────────────────────────
 
@@ -61,14 +62,12 @@ export async function fetchSinaQuotes(
     },
   });
 
-  // 新浪返回 GBK 编码，Node.js fetch 默认用 UTF-8 解码会乱码。
-  // 尝试用 GBK 解码原始字节，失败时回退到默认解码（名称随后用东方财富的数据覆盖）。
+  // 新浪返回 GBK 编码，尝试用 GBK 解码
   let text: string;
   try {
     const buffer = await res.arrayBuffer();
     text = new TextDecoder("gbk").decode(buffer);
   } catch {
-    // TextDecoder("gbk") 不受支持时回退到默认解码
     text = await res.text();
   }
 
@@ -111,6 +110,9 @@ interface EastMoneyItem {
   f21?: number;  // 动态市盈率
   f23?: number;  // 市净率
   f37?: number;  // 股息率
+  f8?: number;   // 换手率
+  f38?: number;  // 每股收益
+  f39?: number;  // 每股净资产
 }
 
 /** 解析东方财富 JSONP 返回，提取基本面和名称 */
@@ -136,9 +138,11 @@ function parseEastMoneyResponse(
       dividendYield: item.f37 != null
         ? parseFloat(item.f37.toFixed(2))
         : null,
+      turnoverRate: item.f8 != null ? parseFloat(item.f8) : null,
+      eps: item.f38 != null ? parseFloat(item.f38) : null,
+      bvps: item.f39 != null ? parseFloat(item.f39) : null,
     });
 
-    // 东方财富返回 JSON，编码为 UTF-8，股票名称可以正确显示
     if (item.f14) {
       names.set(code, item.f14);
     }
@@ -150,9 +154,10 @@ function parseEastMoneyResponse(
 /** 构建东方财富 API URL */
 export function buildEastMoneyUrl(codes: StockCode[]): string {
   const secids = codes.map(getEastMoneySecId).join(",");
-  // f2=最新价, f3=涨跌幅, f12=代码, f14=名称,
-  // f20=总市值, f21=动态市盈率, f23=市净率, f37=股息率
-  return `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f12,f14,f20,f21,f23,f37&secids=${secids}`;
+  // f2=最新价, f3=涨跌幅, f8=换手率, f12=代码, f14=名称,
+  // f20=总市值, f21=动态市盈率, f23=市净率, f37=股息率,
+  // f38=每股收益, f39=每股净资产
+  return `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f12,f14,f20,f21,f23,f37,f38,f39&secids=${secids}`;
 }
 
 /** 从东方财富获取基本面和名称（服务端使用） */
@@ -173,7 +178,7 @@ export async function fetchEastMoneyFundamentals(
 
 // ─── 合并接口 ───────────────────────────────────────────────────
 
-/** 获取完整的股票数据（行情 + 基本面） */
+/** 获取完整的股票数据（行情 + 基本面 + 指标） */
 export async function fetchFullStockData(
   codes: StockCode[]
 ): Promise<StockData[]> {
@@ -192,11 +197,32 @@ export async function fetchFullStockData(
         pb: null,
         marketCap: null,
         dividendYield: null,
+        turnoverRate: null,
+        eps: null,
+        bvps: null,
       };
+
+      // 计算安全边际评分
+      const safetyScore = calcSafetyScore(
+        quote.currentPrice,
+        fundamentals.pe,
+        fundamentals.pb
+      );
+
+      // 计算恐慌指数
+      const fearGauge = calcFearGauge(
+        quote.changePercent,
+        quote.high,
+        quote.low,
+        quote.prevClose,
+        fundamentals.turnoverRate
+      );
 
       return {
         quote: { ...quote, name },
         fundamentals,
+        safetyScore,
+        fearGauge,
       };
     });
 }

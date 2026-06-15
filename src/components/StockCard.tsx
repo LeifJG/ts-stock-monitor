@@ -1,12 +1,12 @@
 // ============================================================
 // StockCard.tsx — 单只股票的行情卡片
 // ============================================================
-// 展示股票名称、价格、涨跌幅、市盈率、市净率、总市值、股息率等基本面指标。
+// 展示股票名称、价格、涨跌幅、基本面指标，以及安全边际评分和恐慌指数。
 
 "use client";
 
 import type { StockData, AlertTrigger } from "@/lib/types";
-import { FIELD_UNITS } from "@/lib/constants";
+import { fearGaugeColor, fearGaugeBg, safetyScoreColor } from "@/lib/indicators";
 
 interface StockCardProps {
   data: StockData;
@@ -43,8 +43,27 @@ function changeBgClass(pct: number): string {
   return "bg-gray-50 border-gray-200";
 }
 
+/** 恐慌指数进度条 */
+function FearBar({ value }: { value: number }) {
+  const color = fearGaugeColor(value);
+  const bgColor = value < 40 ? "bg-green-200" : value < 60 ? "bg-yellow-200" : "bg-red-200";
+  const fillColor = value < 40 ? "bg-green-500" : value < 60 ? "bg-yellow-500" : "bg-red-500";
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-gray-400">恐慌</span>
+      <div className={`h-1.5 flex-1 rounded-full ${bgColor}`}>
+        <div
+          className={`h-1.5 rounded-full ${fillColor}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+      <span className={`text-[10px] font-medium ${color}`}>{value}</span>
+    </div>
+  );
+}
+
 export default function StockCard({ data, alerts }: StockCardProps) {
-  const { quote, fundamentals } = data;
+  const { quote, fundamentals, safetyScore, fearGauge } = data;
   const isUp = quote.changePercent > 0;
   const isDown = quote.changePercent < 0;
   const hasAlerts = alerts.length > 0;
@@ -69,12 +88,18 @@ export default function StockCard({ data, alerts }: StockCardProps) {
         </div>
       )}
 
-      {/* 头部：代码 + 名称 */}
+      {/* 头部：代码 + 名称 + 安全边际 */}
       <div className="mb-3 flex items-center justify-between">
         <div>
           <span className="text-lg font-bold text-gray-900">{quote.name}</span>
           <span className="ml-2 text-sm text-gray-400">{quote.code}</span>
         </div>
+        {/* 安全边际徽章 */}
+        {safetyScore?.grade && safetyScore.score != null && (
+          <div className={`rounded-full px-2 py-0.5 text-xs font-bold ${safetyScoreColor(safetyScore.score)}`}>
+            {safetyScore.grade} · {safetyScore.score}
+          </div>
+        )}
       </div>
 
       {/* 价格区域 */}
@@ -100,17 +125,24 @@ export default function StockCard({ data, alerts }: StockCardProps) {
           value={fundamentals.dividendYield != null ? fundamentals.dividendYield.toFixed(2) + "%" : "--"}
           highlight={alerts.some((a) => a.field === "dividendYield")}
         />
-        <MetricItem
-          label="最高"
-          value={formatPrice(quote.high)}
-          highlight={alerts.some((a) => a.field === "currentPrice" && a.currentValue === quote.high)}
-        />
-        <MetricItem
-          label="最低"
-          value={formatPrice(quote.low)}
-          highlight={alerts.some((a) => a.field === "currentPrice" && a.currentValue === quote.low)}
-        />
+        <MetricItem label="换手率" value={fundamentals.turnoverRate != null ? fundamentals.turnoverRate.toFixed(2) + "%" : "--"} />
+        <MetricItem label="每股收益" value={fundamentals.eps != null ? formatLarge(fundamentals.eps, 3) : "--"} />
       </div>
+
+      {/* 恐慌指数 */}
+      {fearGauge && (
+        <div className={`mt-3 rounded-md p-2 ${fearGaugeBg(fearGauge.overall)}`}>
+          <div className="flex items-center justify-between text-xs">
+            <span className={`font-medium ${fearGaugeColor(fearGauge.overall)}`}>
+              {fearGauge.label}
+            </span>
+            <span className="text-gray-400">
+              涨跌 {fearGauge.drawdown} · 波动 {fearGauge.rsi} · 换手 {fearGauge.macd}
+            </span>
+          </div>
+          <FearBar value={fearGauge.overall} />
+        </div>
+      )}
 
       {/* 成交信息 */}
       <div className="mt-3 text-xs text-gray-400">
