@@ -1,13 +1,14 @@
 // ============================================================
-// src/app/page.tsx — 主页面
+// src/app/page.tsx — 主页面（数据持久化到 localStorage）
 // ============================================================
-// 组装所有组件：自选股管理、定时刷新、告警面板、股票卡片列表。
+// 自选股、刷新间隔、告警规则均自动保存，刷新页面不丢失。
 
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useCallback, useEffect, useRef, useMemo } from "react";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
 import StockList from "@/components/StockList";
 import AlertRuleForm from "@/components/AlertRuleForm";
 import AlertRuleList from "@/components/AlertRuleList";
@@ -16,29 +17,41 @@ import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData } from "@/lib/types";
 
 export default function Home() {
-  // ── 状态 ────────────────────────────────────────────────────
-  const [watchlist, setWatchlist] = useState<StockCode[]>(DEFAULT_WATCHLIST);
-  const [newCode, setNewCode] = useState("");
-  const [refreshInterval, setRefreshInterval] = useState(DEFAULT_REFRESH_INTERVAL);
-  const [showAlertPanel, setShowAlertPanel] = useState(false);
+  // ── 持久化状态（自动同步到 localStorage）─────────────────────────
+  const [watchlist, setWatchlist] = useLocalStorage<StockCode[]>(
+    "ts-stock-monitor:watchlist",
+    DEFAULT_WATCHLIST
+  );
+  const [newCode, setNewCode] = useLocalStorage(
+    "ts-stock-monitor:newCode",
+    ""
+  );
+  const [refreshInterval, setRefreshInterval] = useLocalStorage(
+    "ts-stock-monitor:refreshInterval",
+    DEFAULT_REFRESH_INTERVAL
+  );
+  const [showAlertPanel, setShowAlertPanel] = useLocalStorage(
+    "ts-stock-monitor:showAlertPanel",
+    false
+  );
 
-  // ── 数据 ────────────────────────────────────────────────────
+  // ── 数据（不持久化）──────────────────────────────────────────────
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
 
-  // ── 数据 → Map，供告警引擎使用 ──────────────────────────────
+  // ── 数据 → Map，供告警引擎使用 ──────────────────────────────────
   const dataMap = useMemo(() => {
     const map = new Map<string, StockData>();
     data.forEach((item) => map.set(item.quote.code, item));
     return map;
   }, [data]);
 
-  // ── 数据更新时评估告警 ──────────────────────────────────────
+  // ── 数据更新时评估告警 ──────────────────────────────────────────
   useEffect(() => {
     evaluate(dataMap);
   }, [dataMap, evaluate]);
 
-  // ── 定时刷新 ────────────────────────────────────────────────
+  // ── 定时刷新 ────────────────────────────────────────────────────
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -50,30 +63,29 @@ export default function Home() {
     };
   }, [refreshInterval, refetch]);
 
-  // ── 添加股票 ────────────────────────────────────────────────
+  // ── 添加股票 ────────────────────────────────────────────────────
   const addStock = useCallback(() => {
     const code = newCode.trim();
     if (!code) return;
-    // 只保留数字
     const clean = code.replace(/\D/g, "");
     if (clean.length < 6) return;
     if (watchlist.includes(clean)) return;
     setWatchlist((prev) => [...prev, clean]);
     setNewCode("");
-  }, [newCode, watchlist]);
+  }, [newCode, watchlist, setWatchlist, setNewCode]);
 
   const removeStock = useCallback((code: string) => {
     setWatchlist((prev) => prev.filter((c) => c !== code));
-  }, []);
+  }, [setWatchlist]);
 
-  // ── 刷新间隔变更 ────────────────────────────────────────────
+  // ── 刷新间隔变更 ────────────────────────────────────────────────
   const handleIntervalChange = useCallback((sec: number) => {
     setRefreshInterval(sec);
-  }, []);
+  }, [setRefreshInterval]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* ── 顶部标题 ────────────────────────────────────────── */}
+      {/* ── 顶部标题 ──────────────────────────────────────────── */}
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">📊 A 股量化看板</h1>
@@ -98,7 +110,7 @@ export default function Home() {
         </button>
       </header>
 
-      {/* ── 预警面板 ────────────────────────────────────────── */}
+      {/* ── 预警面板 ──────────────────────────────────────────── */}
       {showAlertPanel && (
         <section className="mb-6 space-y-4">
           <AlertRuleForm onAdd={addRule} />
@@ -108,7 +120,6 @@ export default function Home() {
             onRemove={removeRule}
           />
 
-          {/* 当前触发告警 */}
           {triggers.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <h3 className="mb-2 text-sm font-bold text-amber-700">
@@ -130,7 +141,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ── 自选股管理 ──────────────────────────────────────── */}
+      {/* ── 自选股管理 ────────────────────────────────────────── */}
       <section className="mb-4">
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -174,7 +185,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── 刷新控制 ────────────────────────────────────────── */}
+      {/* ── 刷新控制 ──────────────────────────────────────────── */}
       <section className="mb-6">
         <RefreshTimer
           interval={refreshInterval}
@@ -185,7 +196,7 @@ export default function Home() {
         />
       </section>
 
-      {/* ── 告警横幅 ────────────────────────────────────────── */}
+      {/* ── 告警横幅 ──────────────────────────────────────────── */}
       {triggers.length > 0 && !showAlertPanel && (
         <section className="mb-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -204,7 +215,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ── 股票卡片列表 ────────────────────────────────────── */}
+      {/* ── 股票卡片列表 ──────────────────────────────────────── */}
       <StockList data={data} triggers={triggers} loading={loading} error={error} />
     </div>
   );

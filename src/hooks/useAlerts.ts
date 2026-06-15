@@ -1,13 +1,18 @@
 // ============================================================
-// useAlerts.ts — 告警规则管理 Hook
+// useAlerts.ts — 告警规则管理 Hook（数据持久化到 localStorage）
 // ============================================================
 // 管理告警规则的增删改查，并在数据更新时自动评估规则是否触发。
+// 所有规则自动保存到浏览器 localStorage，刷新不丢失。
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import type { AlertRule, AlertTrigger, StockData, AlertField, AlertOperator } from "@/lib/types";
 import { evaluateAlerts, describeRule } from "@/lib/alert-engine";
+import { useLocalStorage } from "./useLocalStorage";
+
+/** localStorage 存储键名 */
+const STORAGE_KEY = "ts-stock-monitor:alertRules";
 
 interface UseAlertsResult {
   rules: AlertRule[];
@@ -25,7 +30,10 @@ function genId(): string {
 }
 
 export function useAlerts(): UseAlertsResult {
-  const [rules, setRules] = useState<AlertRule[]>([]);
+  // 规则持久化到 localStorage，刷新不丢失
+  const [rules, setRules] = useLocalStorage<AlertRule[]>(STORAGE_KEY, []);
+
+  // 触发状态是临时的，不持久化
   const [triggers, setTriggers] = useState<AlertTrigger[]>([]);
 
   const addRule = useCallback(
@@ -38,18 +46,24 @@ export function useAlerts(): UseAlertsResult {
       };
       setRules((prev) => [...prev, rule]);
     },
-    []
+    [setRules]
   );
 
-  const removeRule = useCallback((id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-  }, []);
+  const removeRule = useCallback(
+    (id: string) => {
+      setRules((prev) => prev.filter((r) => r.id !== id));
+    },
+    [setRules]
+  );
 
-  const toggleRule = useCallback((id: string) => {
-    setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
-    );
-  }, []);
+  const toggleRule = useCallback(
+    (id: string) => {
+      setRules((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+      );
+    },
+    [setRules]
+  );
 
   const updateRule = useCallback(
     (id: string, updates: Partial<AlertRule>) => {
@@ -61,7 +75,7 @@ export function useAlerts(): UseAlertsResult {
         })
       );
     },
-    []
+    [setRules]
   );
 
   const evaluate = useCallback(
