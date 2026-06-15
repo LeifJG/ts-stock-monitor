@@ -7,7 +7,7 @@
 import type { StockCode, StockQuote, StockFundamentals, StockData } from "./types";
 import { getSinaPrefix, getEastMoneySecId } from "./constants";
 
-// ─── Sina Finance API（实时行情）─────────────────────────────────
+// ─── 新浪财经 API（实时行情）────────────────────────────────────
 
 /** 解析新浪返回的 CSV 格式 */
 function parseSinaResponse(text: string): Map<string, Partial<StockQuote>> {
@@ -88,7 +88,7 @@ export async function fetchSinaQuotes(
   return result;
 }
 
-// ─── East Money API（基本面）────────────────────────────────────
+// ─── 东方财富 API（基本面）─────────────────────────────────────
 
 /** 解析东方财富 JSONP 返回 */
 function parseEastMoneyResponse(

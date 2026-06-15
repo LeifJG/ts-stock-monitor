@@ -2,6 +2,7 @@
 // src/app/api/stocks/route.ts — A 股数据 API 路由
 // ============================================================
 // 前端通过此接口获取行情数据，不直接调用外部 API。
+// 支持通过 codes 参数传入多个股票代码（逗号分隔），单次最多查询 50 只。
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFullStockData } from "@/lib/stock-api";
