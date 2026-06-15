@@ -1,0 +1,10 @@
+# 统一使用 UTF-8 编码
+*.ts    text charset=utf-8
+*.tsx   text charset=utf-8
+*.js    text charset=utf-8
+*.json  text charset=utf-8
+*.css   text charset=utf-8
+*.md    text charset=utf-8
+*.html  text charset=utf-8
+*.yaml  text charset=utf-8
+*.yml   text charset=utf-8
