@@ -1,11 +1,12 @@
 // ============================================================
-// src/app/page.tsx — 主页面（新功能：指数 + 表格 + 排序 + 增减持）
+// src/app/page.tsx — 主页面
 // ============================================================
-// 自选股、刷新间隔、告警规则、视图模式均自动保存到 localStorage。
 
 "use client";
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
+import { Button, Input, Tag, Flex, Typography, Badge, Space } from "antd";
+import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined } from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -18,6 +19,8 @@ import RefreshTimer from "@/components/RefreshTimer";
 import DividendCalculator from "@/components/DividendCalculator";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
+
+const { Title, Text } = Typography;
 
 export default function Home() {
   // ── 持久化状态 ──────────────────────────────────────────────────
@@ -46,14 +49,13 @@ export default function Home() {
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
 
-  // ── 获取大盘指数（单独请求） ────────────────────────────────────
+  // ── 获取大盘指数 ────────────────────────────────────────────────
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
     try {
       const res = await fetch("/api/stocks?codes=000001,399006");
       const json = await res.json();
       if (json.success) {
-        // 从 stock 数据格式转换为 IndexData 格式
         const items: IndexData[] = (json.data ?? []).map((d: StockData) => ({
           quote: {
             code: d.quote.code,
@@ -83,19 +85,18 @@ export default function Home() {
     fetchIndices();
   }, [fetchIndices]);
 
-  // ── 数据 → Map，供告警引擎使用 ──────────────────────────────────
+  // ── 数据 → Map ────────────────────────────────────────────────
   const dataMap = useMemo(() => {
     const map = new Map<string, StockData>();
     data.forEach((item) => map.set(item.quote.code, item));
     return map;
   }, [data]);
 
-  // ── 数据更新时评估告警 ──────────────────────────────────────────
   useEffect(() => {
     evaluate(dataMap);
   }, [dataMap, evaluate]);
 
-  // ── 定时刷新（个股 + 指数一起） ─────────────────────────────────
+  // ── 定时刷新 ───────────────────────────────────────────────────
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -123,9 +124,6 @@ export default function Home() {
 
   const removeStock = useCallback((code: string) => {
     setWatchlist((prev) => prev.filter((c) => c !== code));
-    if (watchlist.length <= 1) {
-      // 最后一只被删除时清空
-    }
   }, [setWatchlist]);
 
   const handleIntervalChange = useCallback((sec: number) => {
@@ -133,123 +131,141 @@ export default function Home() {
   }, [setRefreshInterval]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "16px 20px" }}>
       {/* ═══ 顶部标题 ═══ */}
-      <header className="mb-4 flex items-center justify-between">
+      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">📊 A 股量化看板</h1>
-          <p className="mt-0.5 text-sm text-gray-400">实时行情 · 基本面 · 智能预警</p>
+          <Title level={4} style={{ margin: 0 }}>📊 A 股量化看板</Title>
+          <Text type="secondary" style={{ fontSize: 13 }}>实时行情 · 基本面 · 智能预警</Text>
         </div>
-        <div className="flex items-center gap-2">
+        <Flex gap={8} align="center">
           {/* 视图切换 */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-            <button
-              onClick={() => setViewMode("table")}
-              className={`px-3 py-1.5 transition ${viewMode === "table" ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
-            >表格</button>
-            <button
-              onClick={() => setViewMode("card")}
-              className={`px-3 py-1.5 transition ${viewMode === "card" ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
-            >卡片</button>
-          </div>
-          {/* 预警按钮 */}
-          <button
-            onClick={() => setShowAlertPanel(!showAlertPanel)}
-            className={`relative rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              showAlertPanel ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            预警
-            {triggers.length > 0 && (
-              <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-white">
-                {triggers.length}
-              </span>
-            )}
-          </button>
-          {/* 定投计算器按钮 */}
-          <button
+          <Button
+            type={viewMode === "table" ? "primary" : "default"}
+            size="small"
+            icon={<TableOutlined />}
+            onClick={() => setViewMode("table")}
+          >表格</Button>
+          <Button
+            type={viewMode === "card" ? "primary" : "default"}
+            size="small"
+            icon={<AppstoreOutlined />}
+            onClick={() => setViewMode("card")}
+          >卡片</Button>
+
+          {/* 预警 */}
+          <Badge count={triggers.length} size="small" offset={[2, -2]}>
+            <Button
+              type={showAlertPanel ? "primary" : "default"}
+              size="small"
+              icon={<BellOutlined />}
+              onClick={() => setShowAlertPanel(!showAlertPanel)}
+            >预警</Button>
+          </Badge>
+
+          {/* 定投 */}
+          <Button
+            type={showCalculator ? "primary" : "default"}
+            size="small"
+            icon={<CalculatorOutlined />}
             onClick={() => setShowCalculator(!showCalculator)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              showCalculator ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            📈 定投
-          </button>
-        </div>
-      </header>
+          >定投</Button>
+        </Flex>
+      </Flex>
 
       {/* ═══ 大盘指数 ═══ */}
       <IndexCards indices={indices} loading={indicesLoading} />
 
       {/* ═══ 定投计算器 ═══ */}
       {showCalculator && (
-        <section className="mb-4">
+        <section style={{ marginBottom: 16 }}>
           <DividendCalculator />
         </section>
       )}
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (
-        <section className="mb-4 space-y-3">
+        <section style={{ marginBottom: 16 }}>
           <AlertRuleForm onAdd={addRule} />
-          <AlertRuleList rules={rules} onToggle={toggleRule} onRemove={removeRule} />
+          <div style={{ marginTop: 12 }}>
+            <AlertRuleList rules={rules} onToggle={toggleRule} onRemove={removeRule} />
+          </div>
           {triggers.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <h3 className="mb-1.5 text-sm font-bold text-amber-700">🔔 当前触发的告警 ({triggers.length})</h3>
-              <div className="space-y-1">
-                {triggers.map((t, i) => (
-                  <div key={i} className="rounded-lg bg-white px-3 py-1.5 text-xs shadow-sm">
-                    <span className="font-medium">{t.stockName}</span>
-                    <span className="mx-1 text-gray-400">-</span>
-                    <span className="text-amber-600">{t.ruleLabel}</span>
-                    <span className="mx-1 text-gray-300">→</span>
-                    <span className="font-mono text-gray-800">{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</span>
-                  </div>
-                ))}
+            <div
+              style={{
+                marginTop: 12,
+                borderRadius: 12,
+                border: "1px solid #fde68a",
+                background: "#fffbeb",
+                padding: 12,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#d97706", marginBottom: 6 }}>
+                🔔 当前触发的告警 ({triggers.length})
               </div>
+              {triggers.map((t, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: "#fff",
+                    borderRadius: 8,
+                    padding: "4px 10px",
+                    fontSize: 13,
+                    marginBottom: 4,
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <Text strong>{t.stockName}</Text>
+                  <Text type="secondary" style={{ margin: "0 4px" }}>-</Text>
+                  <Text style={{ color: "#d97706" }}>{t.ruleLabel}</Text>
+                  <Text type="secondary" style={{ margin: "0 4px" }}>→</Text>
+                  <Text code>{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</Text>
+                </div>
+              ))}
             </div>
           )}
         </section>
       )}
 
       {/* ═══ 自选股管理 ═══ */}
-      <section className="mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
+      <section style={{ marginBottom: 12 }}>
+        <Flex wrap="wrap" gap={8} align="center">
+          <Input
             placeholder="输入 6 位代码，如 600519"
             value={newCode}
             onChange={(e) => setNewCode(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addStock()}
-            className="w-52 rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+            onPressEnter={addStock}
+            style={{ width: 200 }}
+            size="small"
+            allowClear
           />
-          <button
-            onClick={addStock}
-            disabled={!newCode.trim()}
-            className="rounded-lg bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <Button type="primary" size="small" onClick={addStock} disabled={!newCode.trim()}>
             + 添加
-          </button>
+          </Button>
 
-          <div className="flex flex-wrap gap-1">
+          <Flex wrap="wrap" gap={4}>
             {watchlist.map((code) => (
-              <span key={code} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
+              <Tag
+                key={code}
+                closable
+                onClose={() => removeStock(code)}
+                style={{ fontFamily: "monospace" }}
+              >
                 {code}
-                <button onClick={() => removeStock(code)} className="text-gray-400 hover:text-red-500">✕</button>
-              </span>
+              </Tag>
             ))}
-          </div>
+          </Flex>
 
           {!loading && data.length > 0 && (
-            <span className="ml-auto text-xs text-gray-400">
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>
               {data.length} / {watchlist.length} 只
-            </span>
+            </Text>
           )}
-        </div>
+        </Flex>
       </section>
 
       {/* ═══ 刷新控制 ═══ */}
-      <section className="mb-4">
+      <section style={{ marginBottom: 16 }}>
         <RefreshTimer
           interval={refreshInterval}
           onIntervalChange={handleIntervalChange}
@@ -261,17 +277,28 @@ export default function Home() {
 
       {/* ═══ 告警横幅 ═══ */}
       {triggers.length > 0 && !showAlertPanel && (
-        <section className="mb-3">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-amber-700">🔔 {triggers.length} 条告警触发</span>
-              <button onClick={() => setShowAlertPanel(true)} className="text-xs text-blue-500 hover:text-blue-600">查看详情 →</button>
-            </div>
+        <section style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              borderRadius: 12,
+              border: "1px solid #fde68a",
+              background: "#fffbeb",
+              padding: "8px 16px",
+            }}
+          >
+            <Flex align="center" justify="space-between">
+              <Text style={{ fontSize: 14, fontWeight: 500, color: "#d97706" }}>
+                🔔 {triggers.length} 条告警触发
+              </Text>
+              <Button type="link" size="small" onClick={() => setShowAlertPanel(true)}>
+                查看详情 →
+              </Button>
+            </Flex>
           </div>
         </section>
       )}
 
-      {/* ═══ 个股展示（表格/卡片） ═══ */}
+      {/* ═══ 个股展示 ═══ */}
       {viewMode === "table" ? (
         <StockTable data={data} triggers={triggers} loading={loading} error={error} />
       ) : (

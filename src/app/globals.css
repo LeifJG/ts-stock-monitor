@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+/* ─── 告警行高亮 ────────────────────────────────────────────── */
+.ant-table-row-alert td {
+  background-color: #fffbeb !important;
+}
