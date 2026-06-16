@@ -147,8 +147,9 @@ function parseTencentResponse(text: string): Map<string, TencentStockData> {
 
 /** 构建腾讯行情 URL */
 function buildTencentUrl(codes: StockCode[]): string {
-  // 腾讯格式: sh600519,sz000001
   const items = codes.map((c) => {
+    // 上证指数特殊处理
+    if (c === "000001") return `sh${c}`;
     const market = c.startsWith("6") ? "sh" : c.startsWith("0") || c.startsWith("3") ? "sz" : "bj";
     return `${market}${c}`;
   });
