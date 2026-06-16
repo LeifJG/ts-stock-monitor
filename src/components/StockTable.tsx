@@ -9,6 +9,52 @@ import { useState, useMemo } from "react";
 import type { StockData, AlertTrigger, SortField, SortOrder } from "@/lib/types";
 import { SORT_LABELS } from "@/lib/constants";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
+import { Tooltip } from "antd";
+
+// ─── 列头帮助气泡内容 ─────────────────────────────────────────
+
+const COL_HELP: Record<string, { formula: string; meaning: string }> = {
+  pe: {
+    formula: "股价 ÷ 每股收益",
+    meaning: "按当前利润，买一股多少年回本。越低越便宜，<10 低估，>50 高估。亏损股为负数。",
+  },
+  pb: {
+    formula: "股价 ÷ 每股净资产",
+    meaning: "股价是净资产的多少倍。<1 为破净（折价），>5 说明市场愿意为品牌/技术付溢价。",
+  },
+  marketCap: {
+    formula: "股价 × 总股本",
+    meaning: "公司全部股票的总价值。大市值 = 大盘股，波动相对小。单位：亿元。",
+  },
+  dividendYield: {
+    formula: "每股分红 ÷ 股价 × 100%",
+    meaning: "买入后每年能拿回多少现金股息。>5% 算高股息，>8% 需警惕是否可持续。",
+  },
+  turnoverRate: {
+    formula: "成交量 ÷ 流通股本 × 100%",
+    meaning: "一天内多少人买卖。>5% 活跃，>10% 过热（可能是出货）。<0.5% 冷门。",
+  },
+  roe: {
+    formula: "PB ÷ PE × 100%（或 净利润÷净资产）",
+    meaning: "每 1 元净资产每年能赚多少利润。>20% 优秀，>15% 良好，<5% 低于理财。",
+  },
+  dividendPayoutRatio: {
+    formula: "每股分红 ÷ 每股收益 × 100%",
+    meaning: "利润里拿出多少来分红。<30% 偏保守，30-60% 健康，>100% 不可持续（吃老本）。",
+  },
+  debtRatio: {
+    formula: "总负债 ÷ 总资产 × 100%",
+    meaning: "公司资产有多少是借来的。<50% 稳健，50-70% 正常，>70% 高杠杆需警惕。银行股除外。",
+  },
+  fearIndex: {
+    formula: "涨跌幅×35% + 振幅×35% + 换手率×30%",
+    meaning: "综合恐慌指数 0-100。>60 恐慌（或抄底机会），<40 贪婪（或追高风险）。",
+  },
+  safetyScore: {
+    formula: "(格雷厄姆估值 - 现价) ÷ 估值 × 100%",
+    meaning: "安全边际 0-100。>60 被低估，40-60 合理偏低，<20 高估/危险。基于格雷厄姆公式。",
+  },
+};
 
 interface StockTableProps {
   data: StockData[];
@@ -233,7 +279,46 @@ export default function StockTable({ data, triggers, loading, error }: StockTabl
   );
 }
 
-function Th({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function Th({ children, onClick, help }: { children: React.ReactNode; onClick: () => void; help?: { formula: string; meaning: string } }) {
+  const content = (
+    <span className="border-b border-dotted border-gray-300 hover:border-blue-400">
+      {children}
+    </span>
+  );
+
+  if (help) {
+    return (
+      <th
+        className="cursor-pointer px-2 py-2 text-xs font-medium text-gray-500 transition hover:text-blue-600 select-none"
+        onClick={onClick}
+      >
+        <Tooltip
+          title={
+            <div className="text-xs">
+              <div className="mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">公式</span>
+                <div className="mt-0.5 rounded bg-blue-900/40 px-1.5 py-1 font-mono text-[11px] text-blue-200">
+                  {help.formula}
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">含义</span>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-gray-300">
+                  {help.meaning}
+                </p>
+              </div>
+            </div>
+          }
+          placement="top"
+          color="#1f2937"
+          overlayInnerStyle={{ minWidth: 220, padding: "10px 12px" }}
+        >
+          {content}
+        </Tooltip>
+      </th>
+    );
+  }
+
   return (
     <th
       className="cursor-pointer px-2 py-2 text-xs font-medium text-gray-500 transition hover:text-blue-600 select-none"

@@ -5,6 +5,7 @@
 
 import type { Metadata } from "next";
 import "./globals.css";
+import AntdProvider from "./AntdProvider";
 
 export const metadata: Metadata = {
   title: "📊 A 股量化看板",
@@ -18,7 +19,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body className="min-h-screen bg-gray-50 antialiased">{children}</body>
+      <body className="min-h-screen bg-gray-50 antialiased">
+        <AntdProvider>{children}</AntdProvider>
+      </body>
     </html>
   );
 }
