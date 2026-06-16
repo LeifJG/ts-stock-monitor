@@ -43,7 +43,7 @@ function ColLabel({ field, label }: { field: string; label: string }) {
       }
       placement="top"
       color="#1f2937"
-      overlayInnerStyle={{ minWidth: 220, padding: "10px 12px" }}
+      styles={{ container: { minWidth: 220, padding: "10px 12px" } }}
     >
       <span style={{ borderBottom: "1px dashed #d1d5db", cursor: "help" }}>{label}</span>
     </Tooltip>
