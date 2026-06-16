@@ -60,7 +60,6 @@ export interface StockFundamentals {
   dividendPayoutRatio: number | null; // 股息支付率 (%) = 每股股息 ÷ EPS
   debtRatio: number | null;     // 资产负债率 (%)
 }
-
 /** 高管增减持记录 */
 export interface InsiderTrade {
   date: string;          // 变动日期
@@ -70,6 +69,38 @@ export interface InsiderTrade {
   volume: number;        // 变动数量（股）
   price: number;         // 变动均价
   ratio: number;         // 占流通股比例 (%)
+}
+
+/** 分红记录 */
+export interface DividendRecord {
+  id: string;
+  date: string;        // 到账日期
+  perShare: number;    // 每股分红（元）
+  total: number;       // 实际到账（元）
+}
+
+/** 持仓记录 */
+export interface Position {
+  id: string;
+  stockCode: StockCode;
+  stockName: string;        // 缓存名称
+  shares: number;           // 持有股数
+  buyPrice: number;         // 买入均价（元/股）
+  totalCost: number;        // 总投入（含手续费）
+  buyDate: string;          // 首次买入日期
+  dividends: DividendRecord[];
+}
+
+/** 持仓计算指标 */
+export interface PositionMetrics {
+  currentPrice: number;      // 当前价
+  marketValue: number;       // 当前市值
+  totalProfit: number;       // 总盈亏
+  totalProfitPct: number;    // 盈亏百分比
+  totalDividends: number;    // 累计分红
+  realCost: number;          // 真实成本 = 总投入 - 累计分红
+  realCostPerShare: number;  // 每股真实成本
+  costYield: number;         // 成本股息率(%) = 最新年化每股分红 / 每股真实成本 × 100
 }
 
 /** 安全边际评分 */

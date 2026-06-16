@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import { Button, Input, Tag, Flex, Typography, Badge, Space } from "antd";
-import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined } from "@ant-design/icons";
+import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined, WalletOutlined } from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -18,6 +18,7 @@ import AlertRuleForm from "@/components/AlertRuleForm";
 import AlertRuleList from "@/components/AlertRuleList";
 import RefreshTimer from "@/components/RefreshTimer";
 import DividendCalculator from "@/components/DividendCalculator";
+import PortfolioPanel from "@/components/PortfolioPanel";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
 
@@ -30,6 +31,7 @@ export default function Home() {
   const [showAlertPanel, setShowAlertPanel] = useLocalStorage("ts-stock-monitor:showAlertPanel", false);
   const [viewMode, setViewMode] = useLocalStorage<ViewMode>("ts-stock-monitor:viewMode", "table");
   const [showCalculator, setShowCalculator] = useLocalStorage("ts-stock-monitor:showCalculator", false);
+  const [showPortfolio, setShowPortfolio] = useLocalStorage("ts-stock-monitor:showPortfolio", false);
 
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
@@ -106,6 +108,7 @@ export default function Home() {
             <Button type={showAlertPanel ? "primary" : "default"} size="small" icon={<BellOutlined />} onClick={() => setShowAlertPanel(!showAlertPanel)}>预警</Button>
           </Badge>
           <Button type={showCalculator ? "primary" : "default"} size="small" icon={<CalculatorOutlined />} onClick={() => setShowCalculator(!showCalculator)}>定投</Button>
+          <Button type={showPortfolio ? "primary" : "default"} size="small" icon={<WalletOutlined />} onClick={() => setShowPortfolio(!showPortfolio)}>持仓</Button>
         </Flex>
       </Flex>
 
@@ -114,6 +117,13 @@ export default function Home() {
 
       {/* ═══ 定投计算器 ═══ */}
       {showCalculator && <section style={{ marginBottom: 16 }}><DividendCalculator /></section>}
+
+      {/* ═══ 持仓管理 ═══ */}
+      {showPortfolio && (
+        <section style={{ marginBottom: 16 }}>
+          <PortfolioPanel stockDataMap={dataMap} />
+        </section>
+      )}
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (
