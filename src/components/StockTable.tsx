@@ -140,34 +140,7 @@ export default function StockTable({ data, triggers, loading, error }: StockTabl
         );
       },
     },
-    {
-      title: <ColLabel field="pe" label="市盈率" />,
-      key: "pe",
-      sorter: (a, b) => (a.fundamentals.pe ?? 0) - (b.fundamentals.pe ?? 0),
-      width: 85,
-      render: (_, r) => {
-        const pe = r.fundamentals.pe;
-        const col = pe != null && pe < 0 ? "#9ca3af" : pe != null && pe > 100 ? "#f97316" : undefined;
-        return <span style={{ fontFamily: "monospace", color: col }}>{fmt(pe, 2)}</span>;
-      },
-    },
-    {
-      title: <ColLabel field="pb" label="市净率" />,
-      key: "pb",
-      sorter: (a, b) => (a.fundamentals.pb ?? 0) - (b.fundamentals.pb ?? 0),
-      width: 85,
-      render: (_, r) => <span style={{ fontFamily: "monospace" }}>{fmt(r.fundamentals.pb, 2)}</span>,
-    },
-    {
-      title: <ColLabel field="marketCap" label="总市值" />,
-      key: "marketCap",
-      sorter: (a, b) => (a.fundamentals.marketCap ?? 0) - (b.fundamentals.marketCap ?? 0),
-      width: 100,
-      render: (_, r) => {
-        const v = r.fundamentals.marketCap;
-        return <span style={{ fontFamily: "monospace" }}>{v != null ? v.toLocaleString("zh-CN", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "--"}</span>;
-      },
-    },
+
     {
       title: <ColLabel field="dividendYield" label="股息率" />,
       key: "dividendYield",

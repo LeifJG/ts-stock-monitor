@@ -119,20 +119,7 @@ export default function StockCard({ data, alerts }: StockCardProps) {
 
       {/* 指标网格 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-        <MetricItem
-          label="市盈率"
-          value={fundamentals.pe != null ? formatLarge(fundamentals.pe, 2) : "--"}
-          tooltip="股价÷每股收益，越低越便宜"
-        />
-        <MetricItem
-          label="市净率"
-          value={fundamentals.pb != null ? formatLarge(fundamentals.pb, 2) : "--"}
-          tooltip="股价÷每股净资产，<1破净"
-        />
-        <MetricItem
-          label="总市值"
-          value={fundamentals.marketCap != null ? formatLarge(fundamentals.marketCap, 0) + "亿" : "--"}
-        />
+
         <MetricItem
           label="股息率"
           value={fundamentals.dividendYield != null ? fundamentals.dividendYield.toFixed(2) + "%" : "--"}
