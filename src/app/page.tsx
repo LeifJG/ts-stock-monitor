@@ -15,6 +15,7 @@ import IndexCards from "@/components/IndexCards";
 import AlertRuleForm from "@/components/AlertRuleForm";
 import AlertRuleList from "@/components/AlertRuleList";
 import RefreshTimer from "@/components/RefreshTimer";
+import DividendCalculator from "@/components/DividendCalculator";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
 
@@ -32,6 +33,9 @@ export default function Home() {
   );
   const [viewMode, setViewMode] = useLocalStorage<ViewMode>(
     "ts-stock-monitor:viewMode", "table"
+  );
+  const [showCalculator, setShowCalculator] = useLocalStorage(
+    "ts-stock-monitor:showCalculator", false
   );
 
   // ── 非持久化状态 ────────────────────────────────────────────────
@@ -162,11 +166,27 @@ export default function Home() {
               </span>
             )}
           </button>
+          {/* 定投计算器按钮 */}
+          <button
+            onClick={() => setShowCalculator(!showCalculator)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              showCalculator ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            📈 定投
+          </button>
         </div>
       </header>
 
       {/* ═══ 大盘指数 ═══ */}
       <IndexCards indices={indices} loading={indicesLoading} />
+
+      {/* ═══ 定投计算器 ═══ */}
+      {showCalculator && (
+        <section className="mb-4">
+          <DividendCalculator />
+        </section>
+      )}
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (

@@ -56,6 +56,9 @@ export interface StockFundamentals {
   turnoverRate: number | null;  // 换手率 (%)
   eps: number | null;           // 每股收益
   bvps: number | null;          // 每股净资产
+  roe: number | null;           // 净资产收益率 (%)
+  dividendPayoutRatio: number | null; // 股息支付率 (%) = 每股股息 ÷ EPS
+  debtRatio: number | null;     // 资产负债率 (%)
 }
 
 /** 高管增减持记录 */
@@ -115,7 +118,10 @@ export type SortField =
   | "dividendYield"
   | "turnoverRate"
   | "fearIndex"
-  | "safetyScore";
+  | "safetyScore"
+  | "roe"
+  | "dividendPayoutRatio"
+  | "debtRatio";
 
 export type SortOrder = "asc" | "desc";
 
@@ -139,7 +145,10 @@ export type AlertField =
   | "dividendYield"
   | "turnoverRate"
   | "fearIndex"
-  | "volume";
+  | "volume"
+  | "roe"
+  | "dividendPayoutRatio"
+  | "debtRatio";
 
 /** 告警规则 */
 export interface AlertRule {

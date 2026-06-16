@@ -126,6 +126,21 @@ export default function StockCard({ data, alerts }: StockCardProps) {
           highlight={alerts.some((a) => a.field === "dividendYield")}
         />
         <MetricItem label="换手率" value={fundamentals.turnoverRate != null ? fundamentals.turnoverRate.toFixed(2) + "%" : "--"} />
+        <MetricItem
+          label="ROE"
+          value={fundamentals.roe != null ? fundamentals.roe.toFixed(1) + "%" : "--"}
+          highlight={fundamentals.roe != null && fundamentals.roe > 20}
+        />
+        <MetricItem
+          label="股息支付率"
+          value={fundamentals.dividendPayoutRatio != null ? fundamentals.dividendPayoutRatio.toFixed(1) + "%" : "--"}
+          highlight={fundamentals.dividendPayoutRatio != null && fundamentals.dividendPayoutRatio > 100}
+        />
+        <MetricItem
+          label="负债率"
+          value={fundamentals.debtRatio != null ? fundamentals.debtRatio.toFixed(1) + "%" : "--"}
+          highlight={fundamentals.debtRatio != null && fundamentals.debtRatio > 70}
+        />
         <MetricItem label="每股收益" value={fundamentals.eps != null ? formatLarge(fundamentals.eps, 3) : "--"} />
       </div>
 

@@ -36,6 +36,12 @@ function getFieldValue(data: StockData, field: AlertField): number | null {
       return data.quote.volume;
     case "fearIndex":
       return data.fearGauge?.overall ?? null;
+    case "roe":
+      return data.fundamentals.roe;
+    case "dividendPayoutRatio":
+      return data.fundamentals.dividendPayoutRatio;
+    case "debtRatio":
+      return data.fundamentals.debtRatio;
   }
 }
 

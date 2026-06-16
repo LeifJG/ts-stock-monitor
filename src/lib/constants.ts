@@ -61,6 +61,9 @@ export const FIELD_LABELS: Record<string, string> = {
   turnoverRate: "换手率",
   fearIndex: "恐慌指数",
   volume: "成交量",
+  roe: "ROE",
+  dividendPayoutRatio: "股息支付率",
+  debtRatio: "资产负债率",
 };
 
 /** 告警字段单位 */
@@ -74,6 +77,9 @@ export const FIELD_UNITS: Record<string, string> = {
   turnoverRate: "%",
   fearIndex: "",
   volume: "手",
+  roe: "%",
+  dividendPayoutRatio: "%",
+  debtRatio: "%",
 };
 
 /** 排序字段 → 中文标签 */
@@ -89,6 +95,9 @@ export const SORT_LABELS: Record<string, string> = {
   turnoverRate: "换手率",
   fearIndex: "恐慌指数",
   safetyScore: "安全评分",
+  roe: "ROE",
+  dividendPayoutRatio: "支付率",
+  debtRatio: "负债率",
 };
 
 /** 表格列宽（Tailwind 类） */

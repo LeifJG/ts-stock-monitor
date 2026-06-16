@@ -97,6 +97,8 @@ interface TencentStockData {
   turnoverRate: number | null;
   marketCap: number | null;    // 总市值(亿)
   amplitude: number | null;
+  roe: number | null;          // 净资产收益率(%)
+  bvps: number | null;         // 每股净资产(元)
 }
 
 /** 解析腾讯返回的 GBK 格式（88 个字段） */
@@ -139,6 +141,8 @@ function parseTencentResponse(text: string): Map<string, TencentStockData> {
       turnoverRate: fields[38] ? parseFloat(fields[38]) || null : null,
       marketCap: fields[45] ? parseFloat(fields[45]) || null : null,
       amplitude: fields[43] ? parseFloat(fields[43]) || null : null,
+      roe: fields[66] ? parseFloat(fields[66]) || null : null,
+      bvps: fields[68] ? parseFloat(fields[68]) / 10 || null : null,
     });
   });
 
@@ -212,16 +216,87 @@ export async function fetchIndexData(): Promise<IndexData[]> {
     .filter(Boolean) as IndexData[];
 }
 
+// ─── 东财财务数据（可选补充） ──────────────────────────────────────
+
+interface EastMoneyFinData {
+  dividendYield: number | null;  // 股息率(%)
+  debtRatio: number | null;      // 资产负债率(%)
+}
+
+/**
+ * 尝试从东方财富获取补充财务数据
+ * 直连（不走代理），超时 4s，失败则返回空数据
+ */
+async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<string, EastMoneyFinData>> {
+  const result = new Map<string, EastMoneyFinData>();
+
+  await Promise.all(codes.map(async (code) => {
+    // 确定 secid: 沪市=1.xxx, 深市=0.xxx
+    const secid = code.startsWith("6") ? `1.${code}`
+      : code.startsWith("0") || code.startsWith("3") ? `0.${code}`
+      : `2.${code}`;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+
+      // f162=股息率, f167=资产负债率, f168=ROE
+      const res = await (fetch as any)(
+        `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f162,f167`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeout);
+
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json?.data) return;
+
+      const raw162 = json.data.f162 as number | undefined;
+      const raw167 = json.data.f167 as number | undefined;
+
+      // f162: 每股股息(TTM) → 转成股息率(%)
+      // 有些版本 f162 是股息率(千分比), 需校验
+      // 优先用 raw162 * 0.001 作为股息率, 再用 PE 交叉验证
+      let divYield: number | null = null;
+      if (raw162 != null && raw162 > 0) {
+        // 保守估计: 股息率 = raw162 / 1000 (%)
+        divYield = Math.round(raw162 / 10) / 100; // 千分比转百分比
+        // 如果算出来 > 20%, 说明不是这个含义
+        if (divYield > 20) divYield = null;
+      }
+
+      // f167: 资产负债率 (百分比的千分比?)
+      let debtRatio: number | null = null;
+      if (raw167 != null && raw167 > 0) {
+        debtRatio = Math.round(raw167 / 10) / 10; // 千分比转百分比
+        if (debtRatio > 100) debtRatio = null;
+      }
+
+      result.set(code, { dividendYield: divYield, debtRatio });
+    } catch {
+      // 静默失败
+    }
+  }));
+
+  return result;
+}
+
 // ─── 合并接口 ───────────────────────────────────────────────────
 
 /** 获取完整的股票数据（行情 + 基本面 + 指标） */
 export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[]> {
   const tencentData = await fetchFromTencent(codes);
 
-  return codes
+  // 尝试获取东财补充数据（不阻塞主流程）
+  const emFinPromise = fetchFinancialsFromEastMoney(codes);
+
+  const results = await Promise.all(
+    codes
     .filter((code) => tencentData.has(code))
-    .map((code) => {
+    .map(async (code) => {
       const d = tencentData.get(code)!;
+      const emFin = await emFinPromise;
+      const em = emFin.get(code);
 
       const quote: StockQuote = {
         code: d.code,
@@ -237,20 +312,41 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         timestamp: Date.now(),
       };
 
+      // 优先用腾讯直给的 BVPS，没有则用 PB 反推
+      const bvps = d.bvps ?? (
+        d.pb != null && d.pb > 0
+          ? Math.round((d.currentPrice / d.pb) * 100) / 100
+          : null
+      );
+
+      // EPS = 价 / PE
+      const eps = d.pe != null && d.pe > 0
+        ? Math.round((d.currentPrice / d.pe) * 1000) / 1000
+        : null;
+
+      // 股息率：优先东财
+      const divYield = em?.dividendYield ?? null;
+
+      // 股息支付率 = 每股股息 / EPS
+      let dividendPayoutRatio: number | null = null;
+      if (divYield != null && eps != null && eps > 0) {
+        const divPerShare = (divYield / 100) * d.currentPrice;
+        dividendPayoutRatio = Math.round((divPerShare / eps) * 100 * 100) / 100;
+        if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
+      }
+
       const fundamentals: StockFundamentals = {
         pe: d.pe,
         pb: d.pb,
         marketCap: d.marketCap,
-        dividendYield: null,  // 腾讯不提供股息率
+        dividendYield: divYield,
         turnoverRate: d.turnoverRate,
-        eps: null,
-        bvps: null,
+        eps,
+        bvps,
+        roe: d.roe,
+        dividendPayoutRatio,
+        debtRatio: em?.debtRatio ?? null,
       };
-
-      // 用 PB 反向估算 BVPS（用当前价 ÷ PB）
-      const bvps = d.pb != null && d.pb > 0
-        ? Math.round((d.currentPrice / d.pb) * 100) / 100
-        : null;
 
       const safetyScore = calcSafetyScore(
         d.currentPrice, d.pe, d.pb
@@ -262,9 +358,12 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
 
       return {
         quote,
-        fundamentals: { ...fundamentals, bvps },
+        fundamentals,
         safetyScore,
         fearGauge,
       };
-    });
+    })
+  );
+
+  return results;
 }

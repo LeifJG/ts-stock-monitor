@@ -21,6 +21,7 @@ interface AlertRuleFormProps {
 const FIELDS: AlertField[] = [
   "currentPrice", "changePercent", "pe", "pb", "marketCap",
   "dividendYield", "turnoverRate", "fearIndex", "volume",
+  "roe", "dividendPayoutRatio", "debtRatio",
 ];
 
 const OPERATORS: AlertOperator[] = [">", ">=", "<", "<=", "=="];

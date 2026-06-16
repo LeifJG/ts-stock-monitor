@@ -76,6 +76,9 @@ function sortKey(data: StockData, field: SortField): number {
     case "turnoverRate": return data.fundamentals.turnoverRate ?? -999;
     case "fearIndex": return data.fearGauge?.overall ?? -1;
     case "safetyScore": return data.safetyScore?.score ?? -1;
+    case "roe": return data.fundamentals.roe ?? -999;
+    case "dividendPayoutRatio": return data.fundamentals.dividendPayoutRatio ?? -999;
+    case "debtRatio": return data.fundamentals.debtRatio ?? -999;
   }
 }
 
@@ -166,6 +169,9 @@ export default function StockTable({ data, triggers, loading, error }: StockTabl
               <Th onClick={() => toggleSort("marketCap")}>总市值{SortArrow("marketCap")}</Th>
               <Th onClick={() => toggleSort("dividendYield")}>股息率{SortArrow("dividendYield")}</Th>
               <Th onClick={() => toggleSort("turnoverRate")}>换手率{SortArrow("turnoverRate")}</Th>
+              <Th onClick={() => toggleSort("roe")}>ROE{SortArrow("roe")}</Th>
+              <Th onClick={() => toggleSort("dividendPayoutRatio")}>支付率{SortArrow("dividendPayoutRatio")}</Th>
+              <Th onClick={() => toggleSort("debtRatio")}>负债率{SortArrow("debtRatio")}</Th>
               <Th onClick={() => toggleSort("fearIndex")}>恐慌{SortArrow("fearIndex")}</Th>
               <Th onClick={() => toggleSort("safetyScore")}>安全{SortArrow("safetyScore")}</Th>
             </tr>
@@ -201,6 +207,15 @@ export default function StockTable({ data, triggers, loading, error }: StockTabl
                   </td>
                   <td className={`px-2 py-2 font-mono ${isAbnormal(fundamentals.turnoverRate, "turnoverRate").className}`}>
                     {fmt(fundamentals.turnoverRate, 2)}%
+                  </td>
+                  <td className={`px-2 py-2 font-mono ${fundamentals.roe != null && fundamentals.roe > 20 ? "text-green-600 font-bold" : ""}`}>
+                    {fmt(fundamentals.roe, 1)}%
+                  </td>
+                  <td className={`px-2 py-2 font-mono ${fundamentals.dividendPayoutRatio != null && fundamentals.dividendPayoutRatio > 100 ? "text-red-500 font-bold" : fundamentals.dividendPayoutRatio != null && fundamentals.dividendPayoutRatio < 30 ? "text-yellow-500" : ""}`}>
+                    {fmt(fundamentals.dividendPayoutRatio, 1)}%
+                  </td>
+                  <td className={`px-2 py-2 font-mono ${fundamentals.debtRatio != null && fundamentals.debtRatio > 70 ? "text-red-500 font-bold" : fundamentals.debtRatio != null && fundamentals.debtRatio > 50 ? "text-orange-500" : ""}`}>
+                    {fmt(fundamentals.debtRatio, 1)}%
                   </td>
                   <td className={`px-2 py-2 font-mono ${fearGaugeColor(fearGauge?.overall ?? -1)}`}>
                     {fearGauge?.overall ?? "--"}
