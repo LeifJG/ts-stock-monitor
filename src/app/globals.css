@@ -1,6 +1,34 @@
 @import "tailwindcss";
 
-/* ─── 告警行高亮 ────────────────────────────────────────────── */
+/* ─── Vercel 风格全局覆写 ──────────────────────────────────── */
+
+/* 边距重置 */
+* { box-sizing: border-box; }
+
+/* 告警行高亮 */
 .ant-table-row-alert td {
   background-color: #fffbeb !important;
+}
+
+/* antd Card 边框用 shadow 代替 */
+.ant-card {
+  box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08) !important;
+  border-color: transparent !important;
+}
+
+/* Table 内部单元格用极淡分隔 */
+.ant-table-thead > tr > th {
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid rgba(0,0,0,0.04) !important;
+}
+
+/* 选中后不要蓝色高亮块 */
+.ant-select-focused:not(.ant-select-disabled).ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.06) !important;
 }

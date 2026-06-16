@@ -1,12 +1,10 @@
 // ============================================================
-// IndexCards.tsx — 大盘指数卡片
+// IndexCards.tsx — 大盘指数卡片（Vercel 风格）
 // ============================================================
-// 展示上证指数 + 创业板指，带涨跌幅颜色和恐慌指数进度条。
 
 "use client";
 
-import { Card, Statistic, Progress, Tag, Skeleton, Flex } from "antd";
-import { ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
+import { Progress, Tag, Skeleton, Flex } from "antd";
 import type { IndexData } from "@/lib/types";
 
 interface IndexCardsProps {
@@ -17,47 +15,53 @@ interface IndexCardsProps {
 export default function IndexCards({ indices, loading }: IndexCardsProps) {
   if (loading) {
     return (
-      <Flex gap={12} className="mb-4">
-        <Skeleton.Button active style={{ width: 200, height: 90 }} />
-        <Skeleton.Button active style={{ width: 200, height: 90 }} />
+      <Flex gap={12} style={{ marginBottom: 16 }}>
+        <Skeleton.Button active style={{ width: 210, height: 80 }} />
+        <Skeleton.Button active style={{ width: 210, height: 80 }} />
       </Flex>
     );
   }
   if (indices.length === 0) return null;
 
   return (
-    <Flex gap={12} wrap="wrap" className="mb-4">
+    <Flex gap={12} wrap="wrap" style={{ marginBottom: 16 }}>
       {indices.map((idx) => {
         const { quote, fearGauge } = idx;
         const isUp = quote.changePercent > 0;
+        const changeColor = isUp ? "#ef4444" : "#22c55e";
 
         return (
-          <Card
+          <div
             key={quote.code}
-            size="small"
-            style={{ width: 210 }}
-            styles={{ body: { padding: "14px 16px" } }}
+            style={{
+              width: 210,
+              borderRadius: 8,
+              padding: "14px 16px",
+              background: "#fff",
+              boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)",
+            }}
           >
+            {/* 名称 + 涨跌幅 */}
             <Flex justify="space-between" align="center">
-              <span style={{ fontWeight: 600, fontSize: 14, color: "#374151" }}>
-                {quote.name}
-              </span>
-              <Tag color={isUp ? "red" : "green"} style={{ margin: 0 }}>
+              <span style={{ fontWeight: 500, fontSize: 14, color: "#171717" }}>{quote.name}</span>
+              <Tag color={isUp ? "red" : "green"} style={{ margin: 0, borderRadius: 9999, fontSize: 12, fontWeight: 500 }}>
                 {isUp ? "+" : ""}{quote.changePercent.toFixed(2)}%
               </Tag>
             </Flex>
 
+            {/* 指数值 */}
             <Flex align="baseline" gap={6} style={{ marginTop: 4 }}>
-              <span style={{ fontSize: 22, fontWeight: 700, color: isUp ? "#ef4444" : "#22c55e" }}>
+              <span style={{ fontSize: 22, fontWeight: 600, color: changeColor, letterSpacing: "-0.48px" }}>
                 {quote.currentPrice.toFixed(2)}
               </span>
-              <span style={{ fontSize: 12, color: isUp ? "#ef4444" : "#22c55e" }}>
+              <span style={{ fontSize: 12, color: changeColor }}>
                 {isUp ? "+" : ""}{quote.changeAmount.toFixed(2)}
               </span>
             </Flex>
 
-            <Flex align="center" gap={8} style={{ marginTop: 10 }}>
-              <span style={{ fontSize: 11, color: fearGauge.overall < 40 ? "#22c55e" : fearGauge.overall < 60 ? "#eab308" : "#ef4444", fontWeight: 500 }}>
+            {/* 恐慌进度条 */}
+            <Flex align="center" gap={6} style={{ marginTop: 10 }}>
+              <span style={{ fontSize: 11, color: fearGauge.overall < 40 ? "#22c55e" : fearGauge.overall < 60 ? "#ca8a04" : "#ef4444", fontWeight: 500 }}>
                 {fearGauge.label}
               </span>
               <Progress
@@ -68,11 +72,9 @@ export default function IndexCards({ indices, loading }: IndexCardsProps) {
                 trailColor="#f3f4f6"
                 showInfo={false}
               />
-              <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                {fearGauge.overall}
-              </span>
+              <span style={{ fontSize: 11, color: "#808080" }}>{fearGauge.overall}</span>
             </Flex>
-          </Card>
+          </div>
         );
       })}
     </Flex>

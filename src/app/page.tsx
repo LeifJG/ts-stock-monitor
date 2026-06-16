@@ -1,12 +1,12 @@
 // ============================================================
-// src/app/page.tsx — 主页面
+// src/app/page.tsx — 主页面（Vercel 风格）
 // ============================================================
 
 "use client";
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import { Button, Input, Tag, Flex, Typography, Badge, Space } from "antd";
-import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined } from "@ant-design/icons";
+import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined } from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -23,33 +23,19 @@ import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
 const { Title, Text } = Typography;
 
 export default function Home() {
-  // ── 持久化状态 ──────────────────────────────────────────────────
-  const [watchlist, setWatchlist] = useLocalStorage<StockCode[]>(
-    "ts-stock-monitor:watchlist", DEFAULT_WATCHLIST
-  );
+  const [watchlist, setWatchlist] = useLocalStorage<StockCode[]>("ts-stock-monitor:watchlist", DEFAULT_WATCHLIST);
   const [newCode, setNewCode] = useLocalStorage("ts-stock-monitor:newCode", "");
-  const [refreshInterval, setRefreshInterval] = useLocalStorage(
-    "ts-stock-monitor:refreshInterval", DEFAULT_REFRESH_INTERVAL
-  );
-  const [showAlertPanel, setShowAlertPanel] = useLocalStorage(
-    "ts-stock-monitor:showAlertPanel", false
-  );
-  const [viewMode, setViewMode] = useLocalStorage<ViewMode>(
-    "ts-stock-monitor:viewMode", "table"
-  );
-  const [showCalculator, setShowCalculator] = useLocalStorage(
-    "ts-stock-monitor:showCalculator", false
-  );
+  const [refreshInterval, setRefreshInterval] = useLocalStorage("ts-stock-monitor:refreshInterval", DEFAULT_REFRESH_INTERVAL);
+  const [showAlertPanel, setShowAlertPanel] = useLocalStorage("ts-stock-monitor:showAlertPanel", false);
+  const [viewMode, setViewMode] = useLocalStorage<ViewMode>("ts-stock-monitor:viewMode", "table");
+  const [showCalculator, setShowCalculator] = useLocalStorage("ts-stock-monitor:showCalculator", false);
 
-  // ── 非持久化状态 ────────────────────────────────────────────────
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
 
-  // ── 数据 Hook ──────────────────────────────────────────────────
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
 
-  // ── 获取大盘指数 ────────────────────────────────────────────────
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
     try {
@@ -60,64 +46,41 @@ export default function Home() {
           quote: {
             code: d.quote.code,
             name: d.quote.code === "000001" ? "上证指数" : "创业板指",
-            currentPrice: d.quote.currentPrice,
-            prevClose: d.quote.prevClose,
-            changePercent: d.quote.changePercent,
-            changeAmount: d.quote.changeAmount,
-            high: d.quote.high,
-            low: d.quote.low,
-            volume: d.quote.volume,
-            amount: d.quote.amount,
-            timestamp: d.quote.timestamp,
+            currentPrice: d.quote.currentPrice, prevClose: d.quote.prevClose,
+            changePercent: d.quote.changePercent, changeAmount: d.quote.changeAmount,
+            high: d.quote.high, low: d.quote.low, volume: d.quote.volume, amount: d.quote.amount, timestamp: d.quote.timestamp,
           },
           fearGauge: d.fearGauge ?? { overall: 50, drawdown: 50, rsi: 50, macd: 50, label: "中性 😐" },
         }));
         setIndices(items);
       }
-    } catch {
-      // 静默失败
-    } finally {
-      setIndicesLoading(false);
-    }
+    } catch {} finally { setIndicesLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchIndices();
-  }, [fetchIndices]);
+  useEffect(() => { fetchIndices(); }, [fetchIndices]);
 
-  // ── 数据 → Map ────────────────────────────────────────────────
   const dataMap = useMemo(() => {
-    const map = new Map<string, StockData>();
-    data.forEach((item) => map.set(item.quote.code, item));
-    return map;
+    const m = new Map<string, StockData>();
+    data.forEach((i) => m.set(i.quote.code, i));
+    return m;
   }, [data]);
 
-  useEffect(() => {
-    evaluate(dataMap);
-  }, [dataMap, evaluate]);
+  useEffect(() => { evaluate(dataMap); }, [dataMap, evaluate]);
 
-  // ── 定时刷新 ───────────────────────────────────────────────────
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (refreshInterval > 0) {
-      intervalRef.current = setInterval(() => {
-        refetch();
-        fetchIndices();
-      }, refreshInterval * 1000);
+      intervalRef.current = setInterval(() => { refetch(); fetchIndices(); }, refreshInterval * 1000);
     }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [refreshInterval, refetch, fetchIndices]);
 
-  // ── 添加/删除股票 ──────────────────────────────────────────────
   const addStock = useCallback(() => {
     const code = newCode.trim();
     if (!code) return;
     const clean = code.replace(/\D/g, "");
-    if (clean.length < 6) return;
-    if (watchlist.includes(clean)) return;
+    if (clean.length < 6 || watchlist.includes(clean)) return;
     setWatchlist((prev) => [...prev, clean]);
     setNewCode("");
   }, [newCode, watchlist, setWatchlist, setNewCode]);
@@ -126,50 +89,21 @@ export default function Home() {
     setWatchlist((prev) => prev.filter((c) => c !== code));
   }, [setWatchlist]);
 
-  const handleIntervalChange = useCallback((sec: number) => {
-    setRefreshInterval(sec);
-  }, [setRefreshInterval]);
-
   return (
-    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "16px 20px" }}>
-      {/* ═══ 顶部标题 ═══ */}
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 48px" }}>
+      {/* ═══ 头部 ═══ */}
+      <Flex justify="space-between" align="center" style={{ marginBottom: 20 }}>
         <div>
-          <Title level={4} style={{ margin: 0 }}>📊 A 股量化看板</Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>实时行情 · 基本面 · 智能预警</Text>
+          <Title level={4} style={{ margin: 0, letterSpacing: "-0.32px", fontWeight: 600 }}>📊 A 股量化看板</Title>
+          <Text type="secondary" style={{ fontSize: 13, marginTop: 2, display: "block" }}>实时行情 · 基本面 · 智能预警</Text>
         </div>
         <Flex gap={8} align="center">
-          {/* 视图切换 */}
-          <Button
-            type={viewMode === "table" ? "primary" : "default"}
-            size="small"
-            icon={<TableOutlined />}
-            onClick={() => setViewMode("table")}
-          >表格</Button>
-          <Button
-            type={viewMode === "card" ? "primary" : "default"}
-            size="small"
-            icon={<AppstoreOutlined />}
-            onClick={() => setViewMode("card")}
-          >卡片</Button>
-
-          {/* 预警 */}
+          <Button type={viewMode === "table" ? "primary" : "default"} size="small" icon={<TableOutlined />} onClick={() => setViewMode("table")}>表格</Button>
+          <Button type={viewMode === "card" ? "primary" : "default"} size="small" icon={<AppstoreOutlined />} onClick={() => setViewMode("card")}>卡片</Button>
           <Badge count={triggers.length} size="small" offset={[2, -2]}>
-            <Button
-              type={showAlertPanel ? "primary" : "default"}
-              size="small"
-              icon={<BellOutlined />}
-              onClick={() => setShowAlertPanel(!showAlertPanel)}
-            >预警</Button>
+            <Button type={showAlertPanel ? "primary" : "default"} size="small" icon={<BellOutlined />} onClick={() => setShowAlertPanel(!showAlertPanel)}>预警</Button>
           </Badge>
-
-          {/* 定投 */}
-          <Button
-            type={showCalculator ? "primary" : "default"}
-            size="small"
-            icon={<CalculatorOutlined />}
-            onClick={() => setShowCalculator(!showCalculator)}
-          >定投</Button>
+          <Button type={showCalculator ? "primary" : "default"} size="small" icon={<CalculatorOutlined />} onClick={() => setShowCalculator(!showCalculator)}>定投</Button>
         </Flex>
       </Flex>
 
@@ -177,49 +111,23 @@ export default function Home() {
       <IndexCards indices={indices} loading={indicesLoading} />
 
       {/* ═══ 定投计算器 ═══ */}
-      {showCalculator && (
-        <section style={{ marginBottom: 16 }}>
-          <DividendCalculator />
-        </section>
-      )}
+      {showCalculator && <section style={{ marginBottom: 16 }}><DividendCalculator /></section>}
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (
         <section style={{ marginBottom: 16 }}>
           <AlertRuleForm onAdd={addRule} />
-          <div style={{ marginTop: 12 }}>
-            <AlertRuleList rules={rules} onToggle={toggleRule} onRemove={removeRule} />
-          </div>
+          <div style={{ marginTop: 12 }}><AlertRuleList rules={rules} onToggle={toggleRule} onRemove={removeRule} /></div>
           {triggers.length > 0 && (
-            <div
-              style={{
-                marginTop: 12,
-                borderRadius: 12,
-                border: "1px solid #fde68a",
-                background: "#fffbeb",
-                padding: 12,
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#d97706", marginBottom: 6 }}>
-                🔔 当前触发的告警 ({triggers.length})
-              </div>
+            <div style={{ marginTop: 12, borderRadius: 8, background: "#fffbeb", padding: 12, boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#d97706", marginBottom: 6 }}>🔔 当前触发的告警 ({triggers.length})</div>
               {triggers.map((t, i) => (
-                <div
-                  key={i}
-                  style={{
-                    background: "#fff",
-                    borderRadius: 8,
-                    padding: "4px 10px",
-                    fontSize: 13,
-                    marginBottom: 4,
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                  }}
-                >
+                <div key={i} style={{ borderRadius: 6, background: "#fff", padding: "4px 10px", marginBottom: 4, boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.06)" }}>
                   <Text strong>{t.stockName}</Text>
                   <Text type="secondary" style={{ margin: "0 4px" }}>-</Text>
                   <Text style={{ color: "#d97706" }}>{t.ruleLabel}</Text>
                   <Text type="secondary" style={{ margin: "0 4px" }}>→</Text>
-                  <Text code>{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</Text>
+                  <Text code style={{ fontSize: 12 }}>{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</Text>
                 </div>
               ))}
             </div>
@@ -230,69 +138,31 @@ export default function Home() {
       {/* ═══ 自选股管理 ═══ */}
       <section style={{ marginBottom: 12 }}>
         <Flex wrap="wrap" gap={8} align="center">
-          <Input
-            placeholder="输入 6 位代码，如 600519"
-            value={newCode}
-            onChange={(e) => setNewCode(e.target.value)}
-            onPressEnter={addStock}
-            style={{ width: 200 }}
-            size="small"
-            allowClear
-          />
-          <Button type="primary" size="small" onClick={addStock} disabled={!newCode.trim()}>
-            + 添加
-          </Button>
-
+          <Input placeholder="输入 6 位代码，如 600519" value={newCode} onChange={(e) => setNewCode(e.target.value)} onPressEnter={addStock} style={{ width: 200 }} size="small" allowClear />
+          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={addStock} disabled={!newCode.trim()}>添加</Button>
           <Flex wrap="wrap" gap={4}>
             {watchlist.map((code) => (
-              <Tag
-                key={code}
-                closable
-                onClose={() => removeStock(code)}
-                style={{ fontFamily: "monospace" }}
-              >
-                {code}
-              </Tag>
+              <Tag key={code} closable onClose={() => removeStock(code)} style={{ fontFamily: "var(--font-geist-mono)", borderRadius: 9999 }}>{code}</Tag>
             ))}
           </Flex>
-
           {!loading && data.length > 0 && (
-            <Text type="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>
-              {data.length} / {watchlist.length} 只
-            </Text>
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>{data.length} / {watchlist.length} 只</Text>
           )}
         </Flex>
       </section>
 
       {/* ═══ 刷新控制 ═══ */}
       <section style={{ marginBottom: 16 }}>
-        <RefreshTimer
-          interval={refreshInterval}
-          onIntervalChange={handleIntervalChange}
-          lastUpdated={lastUpdated}
-          onRefresh={() => { refetch(); fetchIndices(); }}
-          loading={loading}
-        />
+        <RefreshTimer interval={refreshInterval} onIntervalChange={setRefreshInterval} lastUpdated={lastUpdated} onRefresh={() => { refetch(); fetchIndices(); }} loading={loading} />
       </section>
 
       {/* ═══ 告警横幅 ═══ */}
       {triggers.length > 0 && !showAlertPanel && (
         <section style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              borderRadius: 12,
-              border: "1px solid #fde68a",
-              background: "#fffbeb",
-              padding: "8px 16px",
-            }}
-          >
+          <div style={{ borderRadius: 8, background: "#fffbeb", padding: "8px 16px", boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)" }}>
             <Flex align="center" justify="space-between">
-              <Text style={{ fontSize: 14, fontWeight: 500, color: "#d97706" }}>
-                🔔 {triggers.length} 条告警触发
-              </Text>
-              <Button type="link" size="small" onClick={() => setShowAlertPanel(true)}>
-                查看详情 →
-              </Button>
+              <Text style={{ fontSize: 14, fontWeight: 500, color: "#d97706" }}>🔔 {triggers.length} 条告警触发</Text>
+              <Button type="link" size="small" onClick={() => setShowAlertPanel(true)} style={{ fontSize: 13 }}>查看详情 →</Button>
             </Flex>
           </div>
         </section>
