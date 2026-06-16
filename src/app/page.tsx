@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import { Button, Input, Tag, Flex, Typography, Badge, Space } from "antd";
-import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined, WalletOutlined } from "@ant-design/icons";
+import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined, WalletOutlined, CalendarOutlined, PieChartOutlined, FundOutlined } from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -20,6 +20,9 @@ import AlertRuleList from "@/components/AlertRuleList";
 import RefreshTimer from "@/components/RefreshTimer";
 import DividendCalculator from "@/components/DividendCalculator";
 import PortfolioPanel from "@/components/PortfolioPanel";
+import PortfolioSummary from "@/components/PortfolioSummary";
+import IndustryDiversity from "@/components/IndustryDiversity";
+import DividendCalendar from "@/components/DividendCalendar";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
 
@@ -33,6 +36,8 @@ export default function Home() {
   const [viewMode, setViewMode] = useLocalStorage<ViewMode>("ts-stock-monitor:viewMode", "table");
   const [showCalculator, setShowCalculator] = useLocalStorage("ts-stock-monitor:showCalculator", false);
   const [showPortfolio, setShowPortfolio] = useLocalStorage("ts-stock-monitor:showPortfolio", false);
+  const [showCalendar, setShowCalendar] = useLocalStorage("ts-stock-monitor:showCalendar", false);
+  const [showIndustry, setShowIndustry] = useLocalStorage("ts-stock-monitor:showIndustry", false);
 
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
@@ -111,6 +116,8 @@ export default function Home() {
           </Badge>
           <Button type={showCalculator ? "primary" : "default"} size="small" icon={<CalculatorOutlined />} onClick={() => setShowCalculator(!showCalculator)}>定投</Button>
           <Button type={showPortfolio ? "primary" : "default"} size="small" icon={<WalletOutlined />} onClick={() => setShowPortfolio(!showPortfolio)}>持仓</Button>
+          <Button type={showCalendar ? "primary" : "default"} size="small" icon={<CalendarOutlined />} onClick={() => setShowCalendar(!showCalendar)}>分红日历</Button>
+          <Button type={showIndustry ? "primary" : "default"} size="small" icon={<PieChartOutlined />} onClick={() => setShowIndustry(!showIndustry)}>行业分布</Button>
         </Flex>
       </Flex>
 
@@ -123,7 +130,24 @@ export default function Home() {
       {/* ═══ 持仓管理 ═══ */}
       {showPortfolio && (
         <section style={{ marginBottom: 16 }}>
-          <PortfolioPanel stockDataMap={dataMap} />
+          <PortfolioSummary stockDataMap={dataMap} />
+          <div style={{ marginTop: 12 }}>
+            <PortfolioPanel stockDataMap={dataMap} />
+          </div>
+        </section>
+      )}
+
+      {/* ═══ 分红日历 ═══ */}
+      {showCalendar && (
+        <section style={{ marginBottom: 16 }}>
+          <DividendCalendar watchlist={watchlist} />
+        </section>
+      )}
+
+      {/* ═══ 行业分散度 ═══ */}
+      {showIndustry && (
+        <section style={{ marginBottom: 16 }}>
+          <IndustryDiversity watchlist={watchlist} />
         </section>
       )}
 

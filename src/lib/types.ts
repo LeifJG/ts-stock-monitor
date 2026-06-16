@@ -216,5 +216,36 @@ export interface UserConfig {
   alertRules: AlertRule[];
 }
 
+/** 分红日历事件 */
+export interface DividendCalendarEvent {
+  date: string;            // 预计除权除息日 YYYY-MM-DD
+  stockCode: StockCode;
+  stockName: string;
+  perShare: number;        // 预计每股分红
+  confidence: "high" | "medium" | "low";  // 预测可信度
+  type: "annual" | "interim" | "special"; // 年度/中期/特别分红
+}
+
+/** 行业分类数据 */
+export interface IndustryData {
+  stockCode: StockCode;
+  stockName: string;
+  industry: string;        // 所属行业
+}
+
+/** 组合收益汇总扩展 */
+export interface PortfolioSummaryExtended {
+  totalInvested: number;
+  totalMarketValue: number;
+  totalDividends: number;
+  totalProfit: number;
+  totalProfitPct: number;
+  positionCount: number;
+  annualDividendIncome: number;     // 年化分红收入（基于当前持仓）
+  annualDividendYield: number;      // 年化分红收益率(市值)
+  dividendYieldOnCost: number;      // 年化分红/总投入
+  avgHoldingYears: number;          // 平均持仓年数
+}
+
 /** 视图模式 */
 export type ViewMode = "card" | "table";
