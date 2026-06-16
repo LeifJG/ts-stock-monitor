@@ -32,6 +32,19 @@ export interface StockQuote {
   timestamp: number;          // 数据时间戳
 }
 
+/** 指数行情（上证/创业板等） */
+export interface IndexQuote {
+  code: StockCode;
+  name: string;
+  currentPrice: number;
+  changePercent: number;
+  changeAmount: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount: number;
+}
+
 /** 基本面指标 */
 export interface StockFundamentals {
   pe: number | null;            // 市盈率（动态）
@@ -41,6 +54,17 @@ export interface StockFundamentals {
   turnoverRate: number | null;  // 换手率 (%)
   eps: number | null;           // 每股收益
   bvps: number | null;          // 每股净资产
+}
+
+/** 高管增减持记录 */
+export interface InsiderTrade {
+  date: string;          // 变动日期
+  name: string;          // 高管姓名
+  position: string;      // 职务
+  changeType: "增持" | "减持" | "未知";
+  volume: number;        // 变动数量（股）
+  price: number;         // 变动均价
+  ratio: number;         // 占流通股比例 (%)
 }
 
 /** 安全边际评分 */
@@ -56,9 +80,9 @@ export type SafetyGrade = "优秀" | "良好" | "一般" | "危险" | "未知";
 /** 单只股票的恐慌指数 0-100（0=极度贪婪，100=极度恐慌） */
 export interface FearGauge {
   overall: number;              // 综合恐慌指数
-  drawdown: number;             // 距52周高点跌幅贡献分
-  rsi: number;                  // RSI 贡献分
-  macd: number;                 // MACD 贡献分
+  drawdown: number;             // 涨跌幅贡献分
+  rsi: number;                  // 振幅贡献分
+  macd: number;                 // 换手率贡献分
   label: string;                // 中文标签
 }
 
@@ -68,10 +92,33 @@ export interface StockData {
   fundamentals: StockFundamentals;
   safetyScore?: SafetyScore;    // 安全边际评分
   fearGauge?: FearGauge;       // 恐慌指数
+  insiderTrades?: InsiderTrade[]; // 高管增减持
 }
 
+/** 指数完整数据 */
+export interface IndexData {
+  quote: IndexQuote;
+  fearGauge: FearGauge;
+}
+
+/** 排序字段 */
+export type SortField =
+  | "code"
+  | "name"
+  | "currentPrice"
+  | "changePercent"
+  | "pe"
+  | "pb"
+  | "marketCap"
+  | "dividendYield"
+  | "turnoverRate"
+  | "fearIndex"
+  | "safetyScore";
+
+export type SortOrder = "asc" | "desc";
+
 /** API 返回格式 */
-export interface StockApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
@@ -87,7 +134,10 @@ export type AlertField =
   | "pe"
   | "pb"
   | "marketCap"
-  | "dividendYield";
+  | "dividendYield"
+  | "turnoverRate"
+  | "fearIndex"
+  | "volume";
 
 /** 告警规则 */
 export interface AlertRule {
@@ -118,3 +168,6 @@ export interface UserConfig {
   refreshInterval: number;       // 刷新间隔（秒）
   alertRules: AlertRule[];
 }
+
+/** 视图模式 */
+export type ViewMode = "card" | "table";

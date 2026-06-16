@@ -30,6 +30,12 @@ function getFieldValue(data: StockData, field: AlertField): number | null {
       return data.fundamentals.marketCap;
     case "dividendYield":
       return data.fundamentals.dividendYield;
+    case "turnoverRate":
+      return data.fundamentals.turnoverRate;
+    case "volume":
+      return data.quote.volume;
+    case "fearIndex":
+      return data.fearGauge?.overall ?? null;
   }
 }
 

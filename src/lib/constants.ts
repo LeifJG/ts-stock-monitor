@@ -14,6 +14,12 @@ export const DEFAULT_WATCHLIST: StockCode[] = [
   "000333", // 美的集团
 ];
 
+/** 大盘指数代码 */
+export const INDEX_CODES: StockCode[] = [
+  "000001", // 上证指数
+  "399006", // 创业板指
+];
+
 /** 默认刷新间隔（秒） */
 export const DEFAULT_REFRESH_INTERVAL = 10;
 
@@ -52,6 +58,9 @@ export const FIELD_LABELS: Record<string, string> = {
   pb: "市净率",
   marketCap: "总市值",
   dividendYield: "股息率",
+  turnoverRate: "换手率",
+  fearIndex: "恐慌指数",
+  volume: "成交量",
 };
 
 /** 告警字段单位 */
@@ -62,4 +71,38 @@ export const FIELD_UNITS: Record<string, string> = {
   pb: "倍",
   marketCap: "亿",
   dividendYield: "%",
+  turnoverRate: "%",
+  fearIndex: "",
+  volume: "手",
+};
+
+/** 排序字段 → 中文标签 */
+export const SORT_LABELS: Record<string, string> = {
+  code: "代码",
+  name: "名称",
+  currentPrice: "现价",
+  changePercent: "涨跌幅",
+  pe: "市盈率",
+  pb: "市净率",
+  marketCap: "总市值",
+  dividendYield: "股息率",
+  turnoverRate: "换手率",
+  fearIndex: "恐慌指数",
+  safetyScore: "安全评分",
+};
+
+/** 表格列宽（Tailwind 类） */
+export const COL_WIDTHS: Record<string, string> = {
+  code: "w-16",
+  name: "w-24",
+  changePercent: "w-20",
+  currentPrice: "w-18",
+  pe: "w-16",
+  pb: "w-16",
+  marketCap: "w-20",
+  dividendYield: "w-16",
+  turnoverRate: "w-16",
+  eps: "w-18",
+  fearIndex: "w-20",
+  safetyScore: "w-20",
 };

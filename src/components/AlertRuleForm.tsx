@@ -7,8 +7,7 @@
 
 import { useState } from "react";
 import type { AlertField, AlertOperator, StockCode } from "@/lib/types";
-import { FIELD_LABELS, FIELD_UNITS, DEFAULT_WATCHLIST } from "@/lib/constants";
-import { describeRule } from "@/lib/alert-engine";
+import { FIELD_LABELS, FIELD_UNITS } from "@/lib/constants";
 
 interface AlertRuleFormProps {
   onAdd: (rule: {
@@ -20,7 +19,8 @@ interface AlertRuleFormProps {
 }
 
 const FIELDS: AlertField[] = [
-  "currentPrice", "changePercent", "pe", "pb", "marketCap", "dividendYield",
+  "currentPrice", "changePercent", "pe", "pb", "marketCap",
+  "dividendYield", "turnoverRate", "fearIndex", "volume",
 ];
 
 const OPERATORS: AlertOperator[] = [">", ">=", "<", "<=", "=="];
@@ -108,8 +108,11 @@ export default function AlertRuleForm({ onAdd }: AlertRuleFormProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between">
-        <div className="text-xs text-gray-400">
-          示例：<code className="rounded bg-gray-100 px-1 py-0.5">股息率 &gt;= 5</code>
+        <div className="flex flex-wrap gap-1 text-xs text-gray-400">
+          <span>示例：</span>
+          <code className="rounded bg-gray-100 px-1 py-0.5">换手率 &gt; 10%</code>
+          <code className="rounded bg-gray-100 px-1 py-0.5">恐慌指数 &gt; 80</code>
+          <code className="rounded bg-gray-100 px-1 py-0.5">成交量 &gt; 5000万手</code>
         </div>
         <button
           type="submit"
