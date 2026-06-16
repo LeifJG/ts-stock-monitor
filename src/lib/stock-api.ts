@@ -285,17 +285,23 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
 
 /** 获取完整的股票数据（行情 + 基本面 + 指标） */
 export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[]> {
-  // 并行发起：腾讯行情 + 东财补充数据
-  const [tencentData, emFinPromise] = await Promise.all([
-    fetchFromTencent(codes),
-    fetchFinancialsFromEastMoney(codes),
+  // 并行发起：腾讯行情 + 东财补充数据（东财超时短，不影响主流程）
+  const emFinPromise = fetchFinancialsFromEastMoney(codes);
+  const tencentData = await fetchFromTencent(codes);
+
+  // 东财最多等 200ms，超时则用估算值
+  const emFin = await Promise.race([
+    emFinPromise,
+    new Promise<Map<string, EastMoneyFinData>>((r) =>
+      setTimeout(() => r(new Map()), 200)
+    ),
   ]);
 
   const results = codes
     .filter((code) => tencentData.has(code))
     .map((code) => {
       const d = tencentData.get(code)!;
-      const em = emFinPromise.get(code);
+      const em = emFin.get(code);
 
       const quote: StockQuote = {
         code: d.code,
@@ -366,20 +372,9 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
       }
 
-      // ── 资产负债率估计 ─────────────────────────────────────
-      // 东财优先，拿不到则用行业经验值估算：
-      //   PE < 8 且 PB < 1.5 → 金融/银行类 ≈ 90%
-      //   PE > 50 或 PB < 0.5 → 困境企业 ≈ 60%
-      //   其他 → 无法估计，显示 N/A
+      // ── 资产负债率 ──────────────────────────────────────────
+      // 仅在东财数据可用时展示，不做估算（银行股负债率高是行业常态）
       let debtRatio = em?.debtRatio ?? null;
-      if (debtRatio == null && d.pe != null && d.pb != null) {
-        if (d.pe < 8 && d.pb < 1.5) {
-          // 银行/保险特征
-          debtRatio = 90;
-        } else if (d.pb < 0.5 || d.pe > 50) {
-          debtRatio = 60;
-        }
-      }
 
       const fundamentals: StockFundamentals = {
         pe: d.pe,
