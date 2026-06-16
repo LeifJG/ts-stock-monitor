@@ -8,8 +8,9 @@ import { useState, useMemo } from "react";
 import { Table, Input, Tooltip, Tag } from "antd";
 import { SearchOutlined, ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { StockData, AlertTrigger, SortField, SortOrder } from "@/lib/types";
+import type { StockData, AlertTrigger, SortField, SortOrder, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
+import InsiderBadge from "./InsiderBadge";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -76,9 +77,10 @@ interface StockTableProps {
   triggers: AlertTrigger[];
   loading: boolean;
   error: string | null;
+  insiderTrades: Map<string, InsiderTrade[]>;
 }
 
-export default function StockTable({ data, triggers, loading, error }: StockTableProps) {
+export default function StockTable({ data, triggers, loading, error, insiderTrades }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
 
   const triggeredCodes = useMemo(() => new Set(triggers.map((t) => t.stockCode)), [triggers]);
@@ -215,6 +217,12 @@ export default function StockTable({ data, triggers, loading, error }: StockTabl
         const col = v != null ? (v >= 70 ? "#16a34a" : v >= 40 ? "#2563eb" : v >= 10 ? "#eab308" : "#dc2626") : undefined;
         return <span style={{ fontFamily: "monospace", color: col }}>{v ?? "--"}</span>;
       },
+    },
+    {
+      title: "增减持",
+      key: "insider",
+      width: 90,
+      render: (_, r) => <InsiderBadge trades={insiderTrades.get(r.quote.code)} />,
     },
   ];
 

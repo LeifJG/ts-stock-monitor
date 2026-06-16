@@ -5,7 +5,7 @@
 "use client";
 
 import { Flex, Empty, Spin, Alert } from "antd";
-import type { StockData, AlertTrigger } from "@/lib/types";
+import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
 import StockCard from "./StockCard";
 
 interface StockListProps {
@@ -13,9 +13,10 @@ interface StockListProps {
   triggers: AlertTrigger[];
   loading: boolean;
   error: string | null;
+  insiderTrades: Map<string, InsiderTrade[]>;
 }
 
-export default function StockList({ data, triggers, loading, error }: StockListProps) {
+export default function StockList({ data, triggers, loading, error, insiderTrades }: StockListProps) {
   if (loading && data.length === 0) {
     return (
       <Flex justify="center" style={{ padding: 60 }}>
@@ -46,6 +47,7 @@ export default function StockList({ data, triggers, loading, error }: StockListP
           <StockCard
             data={item}
             alerts={triggers.filter((t) => t.stockCode === item.quote.code)}
+            trades={insiderTrades.get(item.quote.code)}
           />
         </div>
       ))}

@@ -10,6 +10,7 @@ import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, Plus
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useInsiderData } from "@/hooks/useInsiderData";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
@@ -35,6 +36,7 @@ export default function Home() {
 
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
+  const { trades: insiderTrades } = useInsiderData(watchlist);
 
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
@@ -170,9 +172,9 @@ export default function Home() {
 
       {/* ═══ 个股展示 ═══ */}
       {viewMode === "table" ? (
-        <StockTable data={data} triggers={triggers} loading={loading} error={error} />
+        <StockTable data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} />
       ) : (
-        <StockList data={data} triggers={triggers} loading={loading} error={error} />
+        <StockList data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} />
       )}
     </div>
   );

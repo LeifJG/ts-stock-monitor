@@ -9,12 +9,14 @@ import {
   ArrowUpOutlined, ArrowDownOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
-import type { StockData, AlertTrigger } from "@/lib/types";
+import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
+import InsiderBadge from "./InsiderBadge";
 
 interface StockCardProps {
   data: StockData;
   alerts: AlertTrigger[];
+  trades?: InsiderTrade[];
 }
 
 function formatPrice(v: number): string {
@@ -57,7 +59,7 @@ function MetricItem({ label, value, highlight, tooltip }: {
   return el;
 }
 
-export default function StockCard({ data, alerts }: StockCardProps) {
+export default function StockCard({ data, alerts, trades }: StockCardProps) {
   const { quote, fundamentals, safetyScore, fearGauge } = data;
   const isUp = quote.changePercent > 0;
   const isDown = quote.changePercent < 0;
@@ -102,6 +104,7 @@ export default function StockCard({ data, alerts }: StockCardProps) {
             {safetyScore.grade} · {safetyScore.score}
           </Tag>
         )}
+        {trades && trades.length > 0 && <InsiderBadge trades={trades} />}
       </Flex>
 
       {/* 价格区域 */}
