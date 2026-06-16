@@ -311,12 +311,11 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         timestamp: Date.now(),
       };
 
-      // 优先用腾讯直给的 BVPS，没有则用 PB 反推
-      const bvps = d.bvps ?? (
-        d.pb != null && d.pb > 0
-          ? Math.round((d.currentPrice / d.pb) * 100) / 100
-          : null
-      );
+      // BVPS = 价 / PB（优先用PB计算，腾讯直给作为备选）
+      const bvpsCalc = d.pb != null && d.pb > 0
+        ? Math.round((d.currentPrice / d.pb) * 100) / 100
+        : null;
+      const bvps = bvpsCalc ?? d.bvps;
 
       // ROE = PB / PE（杜邦分析最简形式）
       let roe: number | null = null;
