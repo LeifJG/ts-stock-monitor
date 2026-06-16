@@ -56,33 +56,61 @@ async function proxyFetch(url: string, init?: any, retries = 2): Promise<any> {
 
 // ─── 新浪财经 API（实时行情）────────────────────────────────────
 
-/** 解析新浪返回的 CSV 格式 */
+/** 解析新浪返回的 CSV 格式，支持个股和指数 */
 function parseSinaResponse(text: string): Map<string, Partial<StockQuote>> {
   const map = new Map<string, Partial<StockQuote>>();
 
-  // 新浪返回格式: var hq_str_sh600519="贵州茅台,1900.00,1895.00,...";
+  // 新浪返回格式:
+  //   个股:  var hq_str_sh600519="贵州茅台,1900.00,1895.00,...";  (32+字段)
+  //   指数:  var hq_str_sh000001="上证指数,3195,3210,3185,3215,3180,...";  (~6字段)
   const lines = text.split(";\n");
   lines.forEach((line: string) => {
     const match = line.match(/hq_str_(\w+)="(.+)"/);
     if (!match) return;
     const rawCode = match[1];
     const fields = match[2].split(",");
-    if (fields.length < 32) return;
-
     const code = rawCode.replace(/^(sh|sz|bj)/, "");
-    map.set(code, {
-      code,
-      name: fields[0],
-      currentPrice: parseFloat(fields[3]) || 0,
-      prevClose: parseFloat(fields[2]) || 0,
-      changePercent: parseFloat(fields[2]) || 0,
-      changeAmount: 0,
-      high: parseFloat(fields[4]) || 0,
-      low: parseFloat(fields[5]) || 0,
-      volume: parseFloat(fields[8]) || 0,
-      amount: parseFloat(fields[9]) || 0,
-      timestamp: Date.now(),
-    });
+    const isIndex = code === "000001" || code === "399006";
+
+    if (isIndex) {
+      // 指数格式：name, open, prevClose, currentPrice, high, low
+      if (fields.length < 6) return;
+      const prevClose = parseFloat(fields[2]) || 0;
+      const currentPrice = parseFloat(fields[3]) || 0;
+      const changeAmount = currentPrice - prevClose;
+      const changePercent = prevClose > 0
+        ? parseFloat(((changeAmount / prevClose) * 100).toFixed(2))
+        : 0;
+      map.set(code, {
+        code,
+        name: fields[0],
+        currentPrice,
+        prevClose,
+        changePercent,
+        changeAmount: parseFloat(changeAmount.toFixed(2)),
+        high: parseFloat(fields[4]) || 0,
+        low: parseFloat(fields[5]) || 0,
+        volume: parseFloat(fields[6]) || 0,
+        amount: 0,
+        timestamp: Date.now(),
+      });
+    } else {
+      // 个股格式
+      if (fields.length < 32) return;
+      map.set(code, {
+        code,
+        name: fields[0],
+        currentPrice: parseFloat(fields[3]) || 0,
+        prevClose: parseFloat(fields[2]) || 0,
+        changePercent: parseFloat(fields[2]) || 0,
+        changeAmount: 0,
+        high: parseFloat(fields[4]) || 0,
+        low: parseFloat(fields[5]) || 0,
+        volume: parseFloat(fields[8]) || 0,
+        amount: parseFloat(fields[9]) || 0,
+        timestamp: Date.now(),
+      });
+    }
   });
   return map;
 }
