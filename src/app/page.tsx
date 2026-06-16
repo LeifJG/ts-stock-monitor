@@ -42,17 +42,32 @@ export default function Home() {
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
 
-  // ── 获取大盘指数 ──────────────────────────────────────────────
+  // ── 获取大盘指数（单独请求） ────────────────────────────────────
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
     try {
-      const res = await fetch("/api/stocks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "indices" }),
-      });
+      const res = await fetch("/api/stocks?codes=000001,399006");
       const json = await res.json();
-      if (json.success) setIndices(json.data ?? []);
+      if (json.success) {
+        // 从 stock 数据格式转换为 IndexData 格式
+        const items: IndexData[] = (json.data ?? []).map((d: StockData) => ({
+          quote: {
+            code: d.quote.code,
+            name: d.quote.code === "000001" ? "上证指数" : "创业板指",
+            currentPrice: d.quote.currentPrice,
+            prevClose: d.quote.prevClose,
+            changePercent: d.quote.changePercent,
+            changeAmount: d.quote.changeAmount,
+            high: d.quote.high,
+            low: d.quote.low,
+            volume: d.quote.volume,
+            amount: d.quote.amount,
+            timestamp: d.quote.timestamp,
+          },
+          fearGauge: d.fearGauge ?? { overall: 50, drawdown: 50, rsi: 50, macd: 50, label: "中性 😐" },
+        }));
+        setIndices(items);
+      }
     } catch {
       // 静默失败
     } finally {
