@@ -238,7 +238,7 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
+      const timeout = setTimeout(() => controller.abort(), 1500);
 
       // f162=股息率, f167=资产负债率, f168=ROE
       const res = await (fetch as any)(
@@ -285,18 +285,17 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
 
 /** 获取完整的股票数据（行情 + 基本面 + 指标） */
 export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[]> {
-  const tencentData = await fetchFromTencent(codes);
+  // 并行发起：腾讯行情 + 东财补充数据
+  const [tencentData, emFinPromise] = await Promise.all([
+    fetchFromTencent(codes),
+    fetchFinancialsFromEastMoney(codes),
+  ]);
 
-  // 尝试获取东财补充数据（不阻塞主流程）
-  const emFinPromise = fetchFinancialsFromEastMoney(codes);
-
-  const results = await Promise.all(
-    codes
+  const results = codes
     .filter((code) => tencentData.has(code))
-    .map(async (code) => {
+    .map((code) => {
       const d = tencentData.get(code)!;
-      const emFin = await emFinPromise;
-      const em = emFin.get(code);
+      const em = emFinPromise.get(code);
 
       const quote: StockQuote = {
         code: d.code,
@@ -318,6 +317,15 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
           ? Math.round((d.currentPrice / d.pb) * 100) / 100
           : null
       );
+
+      // ROE = PB / PE（杜邦分析最简形式）
+      let roe: number | null = null;
+      if (d.pb != null && d.pe != null && d.pe > 0) {
+        const calcRoe = (d.pb / d.pe) * 100;
+        if (calcRoe < 100) roe = Math.round(calcRoe * 100) / 100;
+      }
+      // 腾讯直给的 ROE 作为备选
+      if (roe == null) roe = d.roe;
 
       // EPS = 价 / PE
       const eps = d.pe != null && d.pe > 0
@@ -343,7 +351,7 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         turnoverRate: d.turnoverRate,
         eps,
         bvps,
-        roe: d.roe,
+        roe,
         dividendPayoutRatio,
         debtRatio: em?.debtRatio ?? null,
       };
@@ -362,8 +370,7 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         safetyScore,
         fearGauge,
       };
-    })
-  );
+    });
 
   return results;
 }
