@@ -30,12 +30,28 @@ function getProxyAgent() {
   return _proxyAgent;
 }
 
-/** 带代理的 fetch，回调中可直接用同步返回 */
-// node-fetch v3 是 ESM only，这里用原生 fetch + 代理 agent
-import fetch from "node-fetch";
+/** 带自动重试的代理 fetch，最多重试 2 次 */
+async function proxyFetch(url: string, init?: any, retries = 2): Promise<any> {
+  const agent = getProxyAgent();
+  const opts = { ...init, agent };
 
-function proxyFetch(url: string, init?: any): Promise<any> {
-  return (fetch as any)(url, { ...init, agent: getProxyAgent() });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await (fetch as any)(url, opts);
+      // 非网络错误（如 4xx/5xx）也直接返回，不重试
+      return res;
+    } catch (err: any) {
+      const isLast = attempt === retries;
+      if (isLast) throw err;
+      // 网络错误才重试
+      if (!err?.message?.includes("hang up") && !err?.message?.includes("ECONNRESET") &&
+          !err?.message?.includes("ETIMEDOUT") && !err?.message?.includes("ENOTFOUND")) {
+        throw err;
+      }
+      // 等待 1 秒后重试
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
 }
 
 // ─── 新浪财经 API（实时行情）────────────────────────────────────
@@ -158,7 +174,7 @@ function parseEastMoneyResponse(
     if (!code || !codes.includes(code)) return;
 
     fundamentals.set(code, {
-      pe: item.f21 ?? null,
+      pe: null, // 合并时从 EPS 计算
       pb: item.f23 ?? null,
       marketCap: item.f20 != null
         ? parseFloat((item.f20 / 1e8).toFixed(2))
@@ -285,10 +301,17 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
     .map((code) => {
       const quote = quotesMap.get(code)!;
       const name = eastMoneyResult.names.get(code) || quote.name;
-      const fundamentals = eastMoneyResult.fundamentals.get(code) ?? {
+      const raw = eastMoneyResult.fundamentals.get(code) ?? {
         pe: null, pb: null, marketCap: null, dividendYield: null,
         turnoverRate: null, eps: null, bvps: null,
       };
+
+      // 用 EPS 计算市盈率（东财 ulist.np.get 的 f21 不是市盈率）
+      const pe = raw.eps && raw.eps > 0
+        ? Math.round((quote.currentPrice / raw.eps) * 100) / 100
+        : null;
+
+      const fundamentals = { ...raw, pe };
 
       const safetyScore = calcSafetyScore(
         quote.currentPrice, fundamentals.pe, fundamentals.pb
