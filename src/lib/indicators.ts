@@ -8,29 +8,37 @@ import type { SafetyScore, SafetyGrade, FearGauge, StockQuote, StockFundamentals
 // ─── 安全边际评分（格雷厄姆估值法）─────────────────────────────
 
 /**
- * 格雷厄姆估值 = √(22.5 × EPS × BVPS)
+ * 格雷厄姆估值 = √(22.5 × EPS × BVPS)  — 保守，适合低PB价值股
+ * ROE修正估值 = EPS × 合理PE             — 含盈利能力溢价，适合白马股
+ *   合理PE = min(20, 8 + ROE/2)          — ROE越高给越高倍数
  *
- * EP S 和 BVPS 从 PE/PB 反推：
+ * EPS 和 BVPS 从 PE/PB 反推：
  *   EPS = 当前价 / PE
  *   BVPS = 当前价 / PB
  *
- * 安全边际% = (估值 - 当前价) / 估值 × 100%
- * 评分 0-100：安全边际 ≥ 50% → 100，≤ 0% → 0
+ * 两个版本都按同一规则评分：
+ *   安全边际% = (估值 - 当前价) / 估值 × 100%
+ *   评分 0-100：安全边际 ≥ 50% → 100，≤ 0% → 0
  */
 export function calcSafetyScore(
   price: number,
   pe: number | null,
-  pb: number | null
+  pb: number | null,
+  roe?: number | null   // ROE(%)，可选，用于修正版
 ): SafetyScore {
-  if (!pe || !pb || pe <= 0 || pb <= 0 || price <= 0) {
-    return { grahamNumber: null, marginOfSafety: null, score: null, grade: "未知" };
-  }
+  const empty = {
+    grahamNumber: null, marginOfSafety: null, score: null, grade: "未知" as SafetyGrade,
+    roeAdjustedValue: null, roeMarginOfSafety: null, roeScore: null, roeGrade: "未知" as SafetyGrade,
+  };
+
+  if (!pe || !pb || pe <= 0 || pb <= 0 || price <= 0) return empty;
 
   const eps = price / pe;
   const bvps = price / pb;
+
+  // ── 保守版：格雷厄姆原版 ────────────────────────────
   const grahamNumber = Math.sqrt(22.5 * eps * bvps);
   const marginOfSafety = ((grahamNumber - price) / grahamNumber) * 100;
-
   const rawScore = (marginOfSafety / 50) * 100;
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
 
@@ -40,11 +48,35 @@ export function calcSafetyScore(
   else if (marginOfSafety > 0) grade = "一般";
   else grade = "危险";
 
+  // ── 修正版：ROE调整 ────────────────────────────────
+  let roeAdjustedValue: number | null = null;
+  let roeMarginOfSafety: number | null = null;
+  let roeScore: number | null = null;
+  let roeGrade: SafetyGrade = "未知";
+
+  if (roe != null && roe > 0) {
+    // 合理PE = min(20, 8 + ROE/2)，ROE=20% → PE=18，ROE=10% → PE=13
+    const reasonablePE = Math.min(20, Math.max(8, 8 + roe / 2));
+    roeAdjustedValue = eps * reasonablePE;
+    roeMarginOfSafety = ((roeAdjustedValue - price) / roeAdjustedValue) * 100;
+    const rawRoeScore = (roeMarginOfSafety / 50) * 100;
+    roeScore = Math.max(0, Math.min(100, Math.round(rawRoeScore)));
+
+    if (roeMarginOfSafety >= 30) roeGrade = "优秀";
+    else if (roeMarginOfSafety >= 15) roeGrade = "良好";
+    else if (roeMarginOfSafety > 0) roeGrade = "一般";
+    else roeGrade = "危险";
+  }
+
   return {
     grahamNumber: Math.round(grahamNumber * 100) / 100,
     marginOfSafety: Math.round(marginOfSafety * 100) / 100,
     score,
     grade,
+    roeAdjustedValue: roeAdjustedValue != null ? Math.round(roeAdjustedValue * 100) / 100 : null,
+    roeMarginOfSafety: roeMarginOfSafety != null ? Math.round(roeMarginOfSafety * 100) / 100 : null,
+    roeScore,
+    roeGrade,
   };
 }
 

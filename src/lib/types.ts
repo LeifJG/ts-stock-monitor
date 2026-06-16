@@ -76,8 +76,13 @@ export interface InsiderTrade {
 export interface SafetyScore {
   grahamNumber: number | null;   // 格雷厄姆估值（元）
   marginOfSafety: number | null; // 安全边际百分比 (%)
-  score: number | null;          // 评分 0-100
+  score: number | null;          // 评分 0-100（保守）
   grade: SafetyGrade;            // 等级
+  // ROE修正版: 对高PB白马股更友好
+  roeAdjustedValue: number | null;  // ROE修正估值（元）
+  roeMarginOfSafety: number | null; // 修正安全边际 (%)
+  roeScore: number | null;          // 修正评分 0-100
+  roeGrade: SafetyGrade;            // 修正等级
 }
 
 export type SafetyGrade = "优秀" | "良好" | "一般" | "危险" | "未知";

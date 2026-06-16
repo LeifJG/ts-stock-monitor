@@ -210,12 +210,30 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
     {
       title: <ColLabel field="safetyScore" label="安全" />,
       key: "safetyScore",
-      sorter: (a, b) => (a.safetyScore?.score ?? -1) - (b.safetyScore?.score ?? -1),
-      width: 65,
+      sorter: (a, b) => ((a.safetyScore?.score ?? -1) - (b.safetyScore?.score ?? -1)) || ((a.safetyScore?.roeScore ?? -1) - (b.safetyScore?.roeScore ?? -1)),
+      width: 85,
       render: (_, r) => {
-        const v = r.safetyScore?.score;
+        const s = r.safetyScore;
+        const v = s?.score;
+        const rv = s?.roeScore;
         const col = v != null ? (v >= 70 ? "#16a34a" : v >= 40 ? "#2563eb" : v >= 10 ? "#eab308" : "#dc2626") : undefined;
-        return <span style={{ fontFamily: "monospace", color: col }}>{v ?? "--"}</span>;
+        const rCol = rv != null ? (rv >= 70 ? "#16a34a" : rv >= 40 ? "#2563eb" : rv >= 10 ? "#eab308" : "#dc2626") : undefined;
+        return (
+          <Tooltip title={
+            <div style={{ fontSize: 11, lineHeight: 1.8 }}>
+              <div><strong>格雷厄姆（保守）</strong></div>
+              <div>估值 ¥{s?.grahamNumber ?? "--"} · 安全边际 {s?.marginOfSafety != null ? s.marginOfSafety.toFixed(1) + "%" : "--"}</div>
+              <div style={{ marginTop: 4 }}><strong>ROE修正（合理）</strong></div>
+              <div>估值 ¥{s?.roeAdjustedValue ?? "--"} · 安全边际 {s?.roeMarginOfSafety != null ? s.roeMarginOfSafety.toFixed(1) + "%" : "--"}</div>
+            </div>
+          } color="#1f2937">
+            <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, cursor: "help" }}>
+              <span style={{ color: col }}>{v ?? "--"}</span>
+              <span style={{ color: "#9ca3af", margin: "0 2px" }}>|</span>
+              <span style={{ color: rCol }}>{rv ?? "--"}</span>
+            </span>
+          </Tooltip>
+        );
       },
     },
     {

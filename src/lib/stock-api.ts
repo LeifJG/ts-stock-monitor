@@ -390,7 +390,7 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       };
 
       const safetyScore = calcSafetyScore(
-        d.currentPrice, d.pe, d.pb
+        d.currentPrice, d.pe, d.pb, roe
       );
 
       const fearGauge = calcFearGauge(

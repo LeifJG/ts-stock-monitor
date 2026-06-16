@@ -104,6 +104,19 @@ export default function StockCard({ data, alerts, trades }: StockCardProps) {
             {safetyScore.grade} · {safetyScore.score}
           </Tag>
         )}
+        {safetyScore?.roeScore != null && (
+          <Tooltip title={
+            <div style={{ fontSize: 11, lineHeight: 1.8 }}>
+              <div><strong>格雷厄姆（保守）</strong> {safetyScore.score}分 · 估值 ¥{safetyScore.grahamNumber}</div>
+              <div style={{ marginTop: 4 }}><strong>ROE修正（合理）</strong> {safetyScore.roeScore}分 · 估值 ¥{safetyScore.roeAdjustedValue}</div>
+            </div>
+          } color="#1f2937">
+            <Tag color={safetyScore.roeScore >= 60 ? "green" : safetyScore.roeScore >= 30 ? "blue" : "red"}
+              style={{ cursor: "help" }}>
+              {safetyScore.roeGrade} · {safetyScore.roeScore}
+            </Tag>
+          </Tooltip>
+        )}
         {trades && trades.length > 0 && <InsiderBadge trades={trades} />}
       </Flex>
 
