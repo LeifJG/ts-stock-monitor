@@ -238,7 +238,7 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1500);
+      const timeout = setTimeout(() => controller.abort(), 1000);
 
       // f162=股息率, f167=资产负债率, f168=ROE
       const res = await (fetch as any)(
@@ -331,15 +331,54 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         ? Math.round((d.currentPrice / d.pe) * 1000) / 1000
         : null;
 
-      // 股息率：优先东财
-      const divYield = em?.dividendYield ?? null;
-
-      // 股息支付率 = 每股股息 / EPS
+      // ── 股息率估计 ──────────────────────────────────────────
+      // 东财优先，拿不到则用 ROE + PE 推算：
+      //   假定分红比例( payoutRatio )与 ROE 挂钩：
+      //     ROE > 20% → 成长型，30% 利润分红
+      //     ROE 10-20% → 成熟型，45% 分红
+      //     ROE 5-10% → 低增长型，55% 分红
+      //     ROE < 5% → 不分红或不稳定
+      //   股息率 ≈ (payoutRatio * EPS) / 价格 = payoutRatio / PE
+      let divYield = em?.dividendYield ?? null;
       let dividendPayoutRatio: number | null = null;
-      if (divYield != null && eps != null && eps > 0) {
+
+      if (divYield == null && roe != null && d.pe != null && d.pe > 0) {
+        // 用 ROE 推算估计分红比例
+        let estimatedPayout = 0.3; // 默认 30%
+        if (roe > 20) estimatedPayout = 0.30;
+        else if (roe > 15) estimatedPayout = 0.35;
+        else if (roe > 10) estimatedPayout = 0.45;
+        else if (roe > 5) estimatedPayout = 0.55;
+        else estimatedPayout = 0;
+
+        if (estimatedPayout > 0) {
+          // 股息率 ≈ 分红比例 / PE
+          const estimatedDivYield = (estimatedPayout / d.pe) * 100;
+          if (estimatedDivYield < 15) {
+            divYield = Math.round(estimatedDivYield * 100) / 100;
+            dividendPayoutRatio = Math.round(estimatedPayout * 100 * 100) / 100;
+          }
+        }
+      } else if (divYield != null && eps != null && eps > 0) {
+        // 东财数据可用：计算真实支付率
         const divPerShare = (divYield / 100) * d.currentPrice;
         dividendPayoutRatio = Math.round((divPerShare / eps) * 100 * 100) / 100;
         if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
+      }
+
+      // ── 资产负债率估计 ─────────────────────────────────────
+      // 东财优先，拿不到则用行业经验值估算：
+      //   PE < 8 且 PB < 1.5 → 金融/银行类 ≈ 90%
+      //   PE > 50 或 PB < 0.5 → 困境企业 ≈ 60%
+      //   其他 → 无法估计，显示 N/A
+      let debtRatio = em?.debtRatio ?? null;
+      if (debtRatio == null && d.pe != null && d.pb != null) {
+        if (d.pe < 8 && d.pb < 1.5) {
+          // 银行/保险特征
+          debtRatio = 90;
+        } else if (d.pb < 0.5 || d.pe > 50) {
+          debtRatio = 60;
+        }
       }
 
       const fundamentals: StockFundamentals = {
@@ -352,7 +391,7 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         bvps,
         roe,
         dividendPayoutRatio,
-        debtRatio: em?.debtRatio ?? null,
+        debtRatio,
       };
 
       const safetyScore = calcSafetyScore(
