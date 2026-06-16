@@ -11,6 +11,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { StockData, AlertTrigger, SortField, SortOrder, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
 import InsiderBadge from "./InsiderBadge";
+import DividendBadge from "./DividendBadge";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -78,9 +79,10 @@ interface StockTableProps {
   loading: boolean;
   error: string | null;
   insiderTrades: Map<string, InsiderTrade[]>;
+  dividendHistory: Map<string, any>;
 }
 
-export default function StockTable({ data, triggers, loading, error, insiderTrades }: StockTableProps) {
+export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
 
   const triggeredCodes = useMemo(() => new Set(triggers.map((t) => t.stockCode)), [triggers]);
@@ -153,6 +155,12 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         const isHigh = v != null && v > 5;
         return <span style={{ fontFamily: "monospace", color: isHigh ? "#16a34a" : undefined, fontWeight: isHigh ? 700 : 400 }}>{fmt(v, 2)}%</span>;
       },
+    },
+    {
+      title: "分红历史",
+      key: "dividendHistory",
+      width: 110,
+      render: (_, r) => <DividendBadge data={dividendHistory.get(r.quote.code)} />,
     },
     {
       title: <ColLabel field="turnoverRate" label="换手率" />,

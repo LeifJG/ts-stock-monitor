@@ -12,11 +12,13 @@ import {
 import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
 import InsiderBadge from "./InsiderBadge";
+import DividendBadge from "./DividendBadge";
 
 interface StockCardProps {
   data: StockData;
   alerts: AlertTrigger[];
   trades?: InsiderTrade[];
+  dividend?: any;
 }
 
 function formatPrice(v: number): string {
@@ -59,7 +61,7 @@ function MetricItem({ label, value, highlight, tooltip }: {
   return el;
 }
 
-export default function StockCard({ data, alerts, trades }: StockCardProps) {
+export default function StockCard({ data, alerts, trades, dividend }: StockCardProps) {
   const { quote, fundamentals, safetyScore, fearGauge } = data;
   const isUp = quote.changePercent > 0;
   const isDown = quote.changePercent < 0;
@@ -118,6 +120,7 @@ export default function StockCard({ data, alerts, trades }: StockCardProps) {
           </Tooltip>
         )}
         {trades && trades.length > 0 && <InsiderBadge trades={trades} />}
+        {dividend && <DividendBadge data={dividend} />}
       </Flex>
 
       {/* 价格区域 */}
