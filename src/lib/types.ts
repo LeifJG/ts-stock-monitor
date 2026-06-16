@@ -37,12 +37,14 @@ export interface IndexQuote {
   code: StockCode;
   name: string;
   currentPrice: number;
+  prevClose: number;
   changePercent: number;
   changeAmount: number;
   high: number;
   low: number;
   volume: number;
   amount: number;
+  timestamp: number;
 }
 
 /** 基本面指标 */
