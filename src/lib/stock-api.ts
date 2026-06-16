@@ -87,30 +87,28 @@ interface TencentStockData {
   prevClose: number;
   open: number;
   volume: number;       // 手
-  amount: number;       // 总额(元)
+  amount: number;       // 成交额(元)
   high: number;
   low: number;
   changePercent: number;
   changeAmount: number;
-  // 基本面
-  pe: number | null;          // 市盈率
-  pb: number | null;          // 市净率
-  turnoverRate: number | null; // 换手率(%)
+  pe: number | null;
+  pb: number | null;
+  turnoverRate: number | null;
   marketCap: number | null;    // 总市值(亿)
-  amplitude: number | null;    // 振幅(%)
+  amplitude: number | null;
 }
 
-/** 解析腾讯返回的 GBK 格式 */
+/** 解析腾讯返回的 GBK 格式（88 个字段） */
 function parseTencentResponse(text: string): Map<string, TencentStockData> {
   const map = new Map<string, TencentStockData>();
 
-  // 腾讯返回: v_sh600519="...";\nv_sz000001="...";\n
   const lines = text.split("\n");
   lines.forEach((line) => {
     const match = line.match(/v_(\w+)="(.+)"/);
     if (!match) return;
     const fields = match[2].split("~");
-    if (fields.length < 43) return;
+    if (fields.length < 47) return;
 
     const code = match[1].replace(/^(sh|sz)/, "");
     const currentPrice = parseFloat(fields[3]) || 0;
@@ -120,23 +118,27 @@ function parseTencentResponse(text: string): Map<string, TencentStockData> {
       ? parseFloat(((changeAmount / prevClose) * 100).toFixed(2))
       : 0;
 
+    // amount 在腾讯 API 中是 "万" 单位，转成元
+    const amountWan = parseFloat(fields[37]) || 0;
+    const amount = amountWan * 10000;
+
     map.set(code, {
       name: fields[1] || code,
       code,
       currentPrice,
       prevClose,
       open: parseFloat(fields[5]) || 0,
-      volume: parseFloat(fields[6]) || 0,
-      amount: parseFloat(fields[40]) || 0,
-      high: parseFloat(fields[36]) || 0,
-      low: parseFloat(fields[37]) || 0,
+      volume: parseFloat(fields[36]) || parseFloat(fields[6]) || 0,
+      amount,
+      high: parseFloat(fields[33]) || 0,
+      low: parseFloat(fields[34]) || 0,
       changePercent,
       changeAmount: parseFloat(changeAmount.toFixed(2)),
-      pe: fields[29] ? parseFloat(fields[29]) || null : null,
-      pb: fields[33] ? parseFloat(fields[33]) || null : null,
-      turnoverRate: fields[41] ? parseFloat(fields[41]) || null : null,
-      marketCap: fields[32] ? parseFloat((parseFloat(fields[32]) / 1e8).toFixed(2)) || null : null,
-      amplitude: fields[30] ? parseFloat(fields[30]) || null : null,
+      pe: fields[39] ? parseFloat(fields[39]) || null : null,
+      pb: fields[46] ? parseFloat(fields[46]) || null : null,
+      turnoverRate: fields[38] ? parseFloat(fields[38]) || null : null,
+      marketCap: fields[45] ? parseFloat(fields[45]) || null : null,
+      amplitude: fields[43] ? parseFloat(fields[43]) || null : null,
     });
   });
 
