@@ -21,6 +21,7 @@ import RefreshTimer from "@/components/RefreshTimer";
 import DividendCalculator from "@/components/DividendCalculator";
 import PortfolioPanel from "@/components/PortfolioPanel";
 import PortfolioSummary from "@/components/PortfolioSummary";
+import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
@@ -133,6 +134,9 @@ export default function Home() {
       {showPortfolio && (
         <section style={{ marginBottom: 16 }}>
           <PortfolioSummary stockDataMap={dataMap} />
+          <div style={{ marginTop: 12 }}>
+            <PortfolioAdvice stockDataMap={dataMap} />
+          </div>
           <div style={{ marginTop: 12 }}>
             <PortfolioPanel stockDataMap={dataMap} />
           </div>

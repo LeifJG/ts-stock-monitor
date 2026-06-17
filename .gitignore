@@ -25,3 +25,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 scripts/__pycache__/
+data/*.json
+data/portfolio.json

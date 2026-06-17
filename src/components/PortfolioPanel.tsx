@@ -16,6 +16,7 @@ import {
 } from "@ant-design/icons";
 import type { Position, PositionMetrics, StockData } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
+import { usePortfolioSync } from "@/hooks/usePortfolioSync";
 
 const { Text, Title } = Typography;
 
@@ -41,6 +42,8 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     positions, metrics, summary,
     addPosition, removePosition, addDividend, removeDividend,
   } = usePortfolio(stockDataMap);
+
+  usePortfolioSync(positions);
 
   // ── 添加持仓弹窗 ──────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
