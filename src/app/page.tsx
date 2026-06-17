@@ -12,6 +12,7 @@ import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useInsiderData } from "@/hooks/useInsiderData";
 import { useDividendHistory } from "@/hooks/useDividendHistory";
+import { useAlertSync } from "@/hooks/useAlertSync";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
@@ -45,6 +46,7 @@ export default function Home() {
 
   const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
+  useAlertSync(rules);
   const { trades: insiderTrades } = useInsiderData(watchlist);
   const { data: dividendHistory } = useDividendHistory(watchlist);
 

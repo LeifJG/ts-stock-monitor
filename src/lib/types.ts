@@ -171,6 +171,9 @@ export interface ApiResponse<T> {
 /** 告警规则的操作符 */
 export type AlertOperator = ">" | ">=" | "<" | "<=" | "==";
 
+/** 告警类型 */
+export type AlertType = "field" | "costBasis" | "dividendDate";
+
 /** 可设置告警的字段 */
 export type AlertField =
   | "currentPrice"
@@ -195,6 +198,8 @@ export interface AlertRule {
   value: number;
   label: string;              // 用户可读描述，如"股息率 > 5%"
   enabled: boolean;
+  alertType?: AlertType;      // 告警类型，默认 "field"
+  pushToMobile?: boolean;     // 是否推送到微信
 }
 
 /** 告警触发结果 */
