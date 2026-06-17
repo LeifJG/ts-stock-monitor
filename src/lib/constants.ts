@@ -38,13 +38,25 @@ export function getExchange(code: StockCode): string {
   return "sh"; // fallback
 }
 
-/** 新浪 API 前缀 */
-export function getSinaPrefix(code: StockCode): string {
+/** 判断是否为港股通代码（5 位数字） */
+export function isHKStock(code: StockCode): boolean {
+  return /^\d{5}$/.test(code);
+}
+
+/** 获取腾讯 API 市场前缀 */
+export function getTencentPrefix(code: StockCode): string {
+  if (isHKStock(code)) return "hk";
   return getExchange(code);
 }
 
-/** 东方财富 secid: 1=SH, 0=SZ, 2=BJ */
+/** 新浪 API 前缀 */
+export function getSinaPrefix(code: StockCode): string {
+  return getTencentPrefix(code);
+}
+
+/** 东方财富 secid: 1=SH, 0=SZ, 2=BJ (港股不支持) */
 export function getEastMoneySecId(code: StockCode): string {
+  if (isHKStock(code)) return "";
   if (code.startsWith("6")) return `1.${code}`;
   if (code.startsWith("0") || code.startsWith("3")) return `0.${code}`;
   return `2.${code}`;

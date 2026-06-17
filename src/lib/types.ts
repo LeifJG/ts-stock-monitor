@@ -8,7 +8,7 @@
 export type StockCode = string;
 
 /** 市场标识 */
-export type Exchange = "SH" | "SZ" | "BJ";
+export type Exchange = "SH" | "SZ" | "BJ" | "HK";
 
 /** 股票基础信息 */
 export interface StockMeta {

@@ -91,7 +91,9 @@ export default function Home() {
     const code = newCode.trim();
     if (!code) return;
     const clean = code.replace(/\D/g, "");
-    if (clean.length < 6 || watchlist.includes(clean)) return;
+    // A股6位，港股通5位
+    const validLen = clean.length === 5 || clean.length === 6;
+    if (!validLen || watchlist.includes(clean)) return;
     setWatchlist((prev) => [...prev, clean]);
     setNewCode("");
   }, [newCode, watchlist, setWatchlist, setNewCode]);
@@ -176,7 +178,7 @@ export default function Home() {
       {/* ═══ 自选股管理 ═══ */}
       <section style={{ marginBottom: 12 }}>
         <Flex wrap="wrap" gap={8} align="center">
-          <Input placeholder="输入 6 位代码，如 600519" value={newCode} onChange={(e) => setNewCode(e.target.value)} onPressEnter={addStock} style={{ width: 200 }} size="small" allowClear />
+          <Input placeholder="输入代码：A股6位 / 港股5位，如 00700" value={newCode} onChange={(e) => setNewCode(e.target.value)} onPressEnter={addStock} style={{ width: 240 }} size="small" allowClear />
           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={addStock} disabled={!newCode.trim()}>添加</Button>
           <Flex wrap="wrap" gap={4}>
             {watchlist.map((code) => (

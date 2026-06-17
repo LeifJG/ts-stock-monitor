@@ -6,6 +6,7 @@
 
 import type { StockCode, StockQuote, StockFundamentals, StockData, IndexData } from "./types";
 import { calcSafetyScore, calcFearGauge } from "./indicators";
+import { isHKStock, getTencentPrefix, getEastMoneySecId } from "./constants";
 
 // ─── 代理配置 ──────────────────────────────────────────────────
 
@@ -101,18 +102,20 @@ interface TencentStockData {
   bvps: number | null;         // 每股净资产(元)
 }
 
-/** 解析腾讯返回的 GBK 格式（88 个字段） */
+/** 解析腾讯返回的 GBK 格式 */
 function parseTencentResponse(text: string): Map<string, TencentStockData> {
   const map = new Map<string, TencentStockData>();
 
   const lines = text.split("\n");
   lines.forEach((line) => {
-    const match = line.match(/v_(\w+)="(.+)"/);
+    const match = line.match(/v_(hk|sh|sz|bj)(\d+)="(.+)"/);
     if (!match) return;
-    const fields = match[2].split("~");
+    const market = match[1]; // hk, sh, sz, bj
+    const code = match[2];
+    const fields = match[3].split("~");
     if (fields.length < 47) return;
 
-    const code = match[1].replace(/^(sh|sz)/, "");
+    const isHK = market === "hk";
     const currentPrice = parseFloat(fields[3]) || 0;
     const prevClose = parseFloat(fields[4]) || 0;
     const changeAmount = currentPrice - prevClose;
@@ -120,9 +123,15 @@ function parseTencentResponse(text: string): Map<string, TencentStockData> {
       ? parseFloat(((changeAmount / prevClose) * 100).toFixed(2))
       : 0;
 
-    // amount 在腾讯 API 中是 "万" 单位，转成元
-    const amountWan = parseFloat(fields[37]) || 0;
-    const amount = amountWan * 10000;
+    // 港股：amount 直接是元；A股：amount 单位是万
+    const amount = isHK
+      ? Math.round((parseFloat(fields[37]) || 0) * 100) / 100
+      : (parseFloat(fields[37]) || 0) * 10000;
+
+    // 港股：volume 是实际股数；A股：volume 是手（1手=100股）
+    const volume = isHK
+      ? Math.round((parseFloat(fields[6]) || 0) / 100) // 转成手
+      : parseFloat(fields[36]) || parseFloat(fields[6]) || 0;
 
     map.set(code, {
       name: fields[1] || code,
@@ -130,19 +139,26 @@ function parseTencentResponse(text: string): Map<string, TencentStockData> {
       currentPrice,
       prevClose,
       open: parseFloat(fields[5]) || 0,
-      volume: parseFloat(fields[36]) || parseFloat(fields[6]) || 0,
+      volume,
       amount,
       high: parseFloat(fields[33]) || 0,
       low: parseFloat(fields[34]) || 0,
       changePercent,
       changeAmount: parseFloat(changeAmount.toFixed(2)),
+      // PE: 港股和A股都在 field[39]
       pe: fields[39] ? parseFloat(fields[39]) || null : null,
-      pb: fields[46] ? parseFloat(fields[46]) || null : null,
-      turnoverRate: fields[38] ? parseFloat(fields[38]) || null : null,
-      marketCap: fields[45] ? parseFloat(fields[45]) || null : null,
-      amplitude: fields[43] ? parseFloat(fields[43]) || null : null,
-      roe: fields[66] ? parseFloat(fields[66]) || null : null,
-      bvps: fields[68] ? parseFloat(fields[68]) / 10 || null : null,
+      // PB/ROE/BVPS: A股直给，港股不可用
+      pb: isHK ? null : (fields[46] ? parseFloat(fields[46]) || null : null),
+      turnoverRate: isHK
+        ? (fields[43] ? parseFloat(fields[43]) || null : null)
+        : (fields[38] ? parseFloat(fields[38]) || null : null),
+      // 港股市值 = 股价 × 港股通可交易股数(field[44] 万) / 1万（转成亿）
+      marketCap: isHK
+        ? (fields[44] ? Math.round(((parseFloat(fields[44]) * currentPrice) / 10000) * 100) / 100 : null)
+        : (fields[45] ? parseFloat(fields[45]) || null : null),
+      amplitude: isHK ? null : (fields[43] ? parseFloat(fields[43]) || null : null),
+      roe: isHK ? null : (fields[66] ? parseFloat(fields[66]) || null : null),
+      bvps: isHK ? null : (fields[68] ? parseFloat(fields[68]) / 10 || null : null),
     });
   });
 
@@ -154,8 +170,7 @@ function buildTencentUrl(codes: StockCode[]): string {
   const items = codes.map((c) => {
     // 上证指数特殊处理
     if (c === "000001") return `sh${c}`;
-    const market = c.startsWith("6") ? "sh" : c.startsWith("0") || c.startsWith("3") ? "sz" : "bj";
-    return `${market}${c}`;
+    return `${getTencentPrefix(c)}${c}`;
   });
   return `https://qt.gtimg.cn/q=${items.join(",")}`;
 }
@@ -231,10 +246,12 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
   const result = new Map<string, EastMoneyFinData>();
 
   await Promise.all(codes.map(async (code) => {
+    // 港股没有东财数据
+    if (isHKStock(code)) return;
+
     // 确定 secid: 沪市=1.xxx, 深市=0.xxx
-    const secid = code.startsWith("6") ? `1.${code}`
-      : code.startsWith("0") || code.startsWith("3") ? `0.${code}`
-      : `2.${code}`;
+    const secid = getEastMoneySecId(code);
+    if (!secid) return;
 
     try {
       const controller = new AbortController();
@@ -348,21 +365,29 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       let divYield = em?.dividendYield ?? null;
       let dividendPayoutRatio: number | null = null;
 
-      if (divYield == null && roe != null && d.pe != null && d.pe > 0) {
-        // 用 ROE 推算估计分红比例
-        let estimatedPayout = 0.3; // 默认 30%
-        if (roe > 20) estimatedPayout = 0.30;
-        else if (roe > 15) estimatedPayout = 0.35;
-        else if (roe > 10) estimatedPayout = 0.45;
-        else if (roe > 5) estimatedPayout = 0.55;
-        else estimatedPayout = 0;
+      if (divYield == null && d.pe != null && d.pe > 0) {
+        if (roe != null) {
+          // 用 ROE 推算估计分红比例（A股）
+          let estimatedPayout = 0.3;
+          if (roe > 20) estimatedPayout = 0.30;
+          else if (roe > 15) estimatedPayout = 0.35;
+          else if (roe > 10) estimatedPayout = 0.45;
+          else if (roe > 5) estimatedPayout = 0.55;
+          else estimatedPayout = 0;
 
-        if (estimatedPayout > 0) {
-          // 股息率 ≈ 分红比例 / PE
-          const estimatedDivYield = (estimatedPayout / d.pe) * 100;
+          if (estimatedPayout > 0) {
+            const estimatedDivYield = (estimatedPayout / d.pe) * 100;
+            if (estimatedDivYield < 15) {
+              divYield = Math.round(estimatedDivYield * 100) / 100;
+              dividendPayoutRatio = Math.round(estimatedPayout * 100 * 100) / 100;
+            }
+          }
+        } else if (isHKStock(d.code)) {
+          // 港股无ROE数据，使用保守估算：平均分红比例 40%
+          const estimatedDivYield = (0.40 / d.pe) * 100;
           if (estimatedDivYield < 15) {
             divYield = Math.round(estimatedDivYield * 100) / 100;
-            dividendPayoutRatio = Math.round(estimatedPayout * 100 * 100) / 100;
+            dividendPayoutRatio = 40;
           }
         }
       } else if (divYield != null && eps != null && eps > 0) {
