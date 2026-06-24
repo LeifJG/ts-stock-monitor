@@ -31,9 +31,7 @@ import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
 import StockScreener from "@/components/StockScreener";
-import dynamic from "next/dynamic";
-
-const TradingNotes = dynamic(() => import("@/components/TradingNotes"), { ssr: false });
+import TradingNotes from "@/components/TradingNotes";
 import { computeAllScores, applyFilters, type ScreenerFilters } from "@/lib/scorer";
 import { DEFAULT_FILTERS } from "@/lib/scorer";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
