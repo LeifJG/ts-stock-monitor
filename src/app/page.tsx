@@ -204,12 +204,8 @@ export default function Home() {
       {/* ═══ 收盘日报（弹窗）═══ */}
       <DailyReport open={showReport} onClose={() => setShowReport(false)} />
 
-      {/* ═══ 交易笔记 ═══ */}
-      {showNotes && (
-        <section style={{ marginBottom: 16 }}>
-          <TradingNotes />
-        </section>
-      )}
+      {/* ═══ 交易笔记（弹窗）═══ */}
+      <TradingNotes open={showNotes} onClose={() => setShowNotes(false)} />
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (
