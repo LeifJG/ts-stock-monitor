@@ -1,36 +1,26 @@
 // ============================================================
-// StockCard.tsx — 单只股票的行情卡片
+// StockCard.tsx — 单只股票的行情卡片（深色模式适配版）
 // ============================================================
 
 "use client";
 
-import { Card, Tag, Progress, Flex, Tooltip } from "antd";
+import { useState, useMemo } from "react";
+import { Card, Tag, Progress, Flex, Tooltip, Button } from "antd";
 import {
   ArrowUpOutlined, ArrowDownOutlined,
-  WarningOutlined,
+  WarningOutlined, DownOutlined, UpOutlined,
 } from "@ant-design/icons";
 import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
 import InsiderBadge from "./InsiderBadge";
 import DividendBadge from "./DividendBadge";
+import { priceColorFn, fearColor, fmt, fmtMoney } from "@/lib/format";
 
 interface StockCardProps {
   data: StockData;
   alerts: AlertTrigger[];
   trades?: InsiderTrade[];
   dividend?: any;
-}
-
-function formatPrice(v: number): string {
-  return v.toFixed(2);
-}
-
-function formatLarge(v: number | null, digits = 2): string {
-  if (v === null) return "--";
-  return v.toLocaleString("zh-CN", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
 }
 
 function MetricItem({ label, value, highlight, tooltip }: {
@@ -44,19 +34,19 @@ function MetricItem({ label, value, highlight, tooltip }: {
       style={{
         borderRadius: 6,
         padding: "4px 8px",
-        background: highlight ? "#fef3c7" : "#f9fafb",
-        outline: highlight ? "1px solid #fcd34d" : undefined,
+        background: highlight ? "var(--alert-bg)" : "var(--hover-bg)",
+        outline: highlight ? "1px solid var(--gold)" : undefined,
       }}
     >
-      <div style={{ fontSize: 11, color: "#9ca3af" }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: highlight ? "#d97706" : "#374151" }}>
+      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: highlight ? "var(--gold)" : "var(--text-primary)" }}>
         {value}
       </div>
     </div>
   );
 
   if (tooltip) {
-    return <Tooltip title={tooltip}>{el}</Tooltip>;
+    return <Tooltip title={tooltip} color="#27272a">{el}</Tooltip>;
   }
   return el;
 }
@@ -66,12 +56,13 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
   const isUp = quote.changePercent > 0;
   const isDown = quote.changePercent < 0;
   const hasAlerts = alerts.length > 0;
-  const changeColor = isUp ? "#ef4444" : isDown ? "#22c55e" : "#9ca3af";
+  const changeColor = priceColorFn(quote.changePercent);
+  const [expanded, setExpanded] = useState(false);
 
-  let borderColor = "#e5e7eb";
-  if (hasAlerts) borderColor = "#fbbf24";
-  else if (isUp) borderColor = "#fecaca";
-  else if (isDown) borderColor = "#bbf7d0";
+  let borderColor = "var(--border-color)";
+  if (hasAlerts) borderColor = "var(--gold)";
+  else if (isUp) borderColor = "var(--red)";
+  else if (isDown) borderColor = "var(--green)";
 
   return (
     <Card
@@ -84,7 +75,7 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
         <div
           style={{
             position: "absolute", top: -10, right: -10,
-            background: "#fbbf24", color: "#fff",
+            background: "var(--gold)", color: "#fff",
             borderRadius: 20, padding: "2px 10px",
             fontSize: 12, fontWeight: 700,
             boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
@@ -98,7 +89,7 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
       {/* 头部：名称 + 代码 + 安全评分 */}
       <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}>
         <Flex align="center" gap={8}>
-          <span style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{quote.name}</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>{quote.name}</span>
           <Tag style={{ margin: 0, fontFamily: "monospace" }}>{quote.code}</Tag>
         </Flex>
         {safetyScore?.grade && safetyScore.score != null && (
@@ -112,7 +103,7 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
               <div><strong>格雷厄姆（保守）</strong> {safetyScore.score}分 · 估值 ¥{safetyScore.grahamNumber}</div>
               <div style={{ marginTop: 4 }}><strong>ROE修正（合理）</strong> {safetyScore.roeScore}分 · 估值 ¥{safetyScore.roeAdjustedValue}</div>
             </div>
-          } color="#1f2937">
+          } color="#27272a">
             <Tag color={safetyScore.roeScore >= 60 ? "green" : safetyScore.roeScore >= 30 ? "blue" : "red"}
               style={{ cursor: "help" }}>
               {safetyScore.roeGrade} · {safetyScore.roeScore}
@@ -126,7 +117,7 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
       {/* 价格区域 */}
       <Flex align="baseline" gap={12} style={{ marginBottom: 12 }}>
         <span style={{ fontSize: 28, fontWeight: 700, color: changeColor }}>
-          {formatPrice(quote.currentPrice)}
+          {fmt(quote.currentPrice, 2)}
         </span>
         <span style={{ fontSize: 15, fontWeight: 500, color: changeColor }}>
           {isUp ? "+" : ""}{quote.changePercent.toFixed(2)}%
@@ -170,45 +161,134 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
         />
         <MetricItem
           label="每股收益"
-          value={fundamentals.eps != null ? formatLarge(fundamentals.eps, 3) : "--"}
+          value={fundamentals.eps != null ? fmtMoney(fundamentals.eps) : "--"}
         />
       </div>
 
       {/* 恐慌指数 */}
-      {fearGauge && (
-        <div
-          style={{
-            marginTop: 10,
-            borderRadius: 6,
-            padding: "8px 10px",
-            background: fearGauge.overall < 40 ? "#f0fdf4" : fearGauge.overall < 60 ? "#fefce8" : "#fef2f2",
-            border: `1px solid ${fearGauge.overall < 40 ? "#bbf7d0" : fearGauge.overall < 60 ? "#fde68a" : "#fecaca"}`,
-          }}
-        >
-          <Flex align="center" justify="space-between" style={{ marginBottom: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: fearGauge.overall < 40 ? "#22c55e" : fearGauge.overall < 60 ? "#eab308" : "#ef4444" }}>
-              {fearGauge.label}
-            </span>
-            <span style={{ fontSize: 11, color: "#9ca3af" }}>
-              涨跌{fearGauge.drawdown} · 波动{fearGauge.rsi} · 换手{fearGauge.macd}
-            </span>
-          </Flex>
-          <Progress
-            percent={fearGauge.overall}
-            size="small"
-            showInfo={false}
-            strokeColor={fearGauge.overall < 40 ? "#22c55e" : fearGauge.overall < 60 ? "#eab308" : "#ef4444"}
-            trailColor="#e5e7eb"
-          />
-        </div>
-      )}
+      {fearGauge && <FearGaugeBar fearGauge={fearGauge} />}
 
       {/* 成交信息 */}
-      <Flex gap={4} style={{ marginTop: 10, fontSize: 12, color: "#9ca3af" }}>
+      <Flex gap={4} style={{ marginTop: 10, fontSize: 12, color: "var(--text-tertiary)" }}>
         <span>成交量 {fundamentals.turnoverRate != null ? (fundamentals.turnoverRate > 100 ? (quote.volume / 1e4).toFixed(1) + "万" : quote.volume.toFixed(0)) : quote.volume.toFixed(0)}手</span>
         <span> · </span>
-        <span>成交额 {formatLarge(quote.amount / 1e8, 2)}亿</span>
+        <span>成交额 {fmtMoney(quote.amount / 1e8)}亿</span>
       </Flex>
+
+      {/* 展开/折叠按钮 */}
+      <Flex justify="center" style={{ marginTop: 8 }}>
+        <Button
+          type="text"
+          size="small"
+          icon={expanded ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => setExpanded(!expanded)}
+          style={{ fontSize: 11, color: "var(--text-tertiary)" }}
+        >
+          {expanded ? "收起" : "更多"}
+        </Button>
+      </Flex>
+
+      {/* 展开详情 */}
+      {expanded && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 10,
+            borderTop: "1px solid var(--border-secondary)",
+          }}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>PE（市盈率）</div>
+              <Flex align="center" gap={6}>
+                <div style={{ width: 50, height: 5, borderRadius: 3, background: "var(--hover-bg)", overflow: "hidden" }}>
+                  <div style={{
+                    width: `${Math.min(100, (fundamentals.pe ?? 0) / 50 * 100)}%`,
+                    height: "100%",
+                    borderRadius: 3,
+                    background: fundamentals.pe != null && fundamentals.pe < 10 ? "var(--green)" : fundamentals.pe != null && fundamentals.pe > 30 ? "var(--red)" : "var(--gold)",
+                  }} />
+                </div>
+                <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-primary)" }}>
+                  {fundamentals.pe?.toFixed(1) ?? "--"}
+                </span>
+              </Flex>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>PB（市净率）</div>
+              <span style={{ fontSize: 12, fontFamily: "monospace", color: fundamentals.pb != null && fundamentals.pb < 1 ? "var(--green)" : "var(--text-primary)" }}>
+                {fundamentals.pb?.toFixed(2) ?? "--"}
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>总市值</div>
+              <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-primary)" }}>
+                {fundamentals.marketCap != null ? fundamentals.marketCap.toFixed(1) + "亿" : "--"}
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>每股净资产</div>
+              <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-primary)" }}>
+                {fundamentals.bvps != null ? "¥" + fundamentals.bvps.toFixed(2) : "--"}
+              </span>
+            </div>
+            {safetyScore && (
+              <>
+                <div style={{ gridColumn: "span 2" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>安全边际</div>
+                  <Flex gap={16}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>格雷厄姆</div>
+                      <div style={{ fontSize: 12, fontFamily: "monospace", color: safetyScore.score != null && safetyScore.score >= 40 ? "var(--green)" : "var(--gold)" }}>
+                        {safetyScore.score ?? "--"}分 · ¥{safetyScore.grahamNumber ?? "--"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>ROE修正</div>
+                      <div style={{ fontSize: 12, fontFamily: "monospace", color: safetyScore.roeScore != null && safetyScore.roeScore >= 40 ? "var(--green)" : "var(--gold)" }}>
+                        {safetyScore.roeScore ?? "--"}分 · ¥{safetyScore.roeAdjustedValue ?? "--"}
+                      </div>
+                    </div>
+                  </Flex>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
+  );
+}
+
+// ─── 恐惧指数条（子组件） ────────────────────────────────────
+
+function FearGaugeBar({ fearGauge }: { fearGauge: { overall: number; label: string; drawdown: number; rsi: number; macd: number } }) {
+  const fc = fearColor(fearGauge.overall);
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        borderRadius: 6,
+        padding: "8px 10px",
+        background: fc.bg,
+        border: `1px solid ${fc.bar}`,
+      }}
+    >
+      <Flex align="center" justify="space-between" style={{ marginBottom: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: fc.text }}>
+          {fearGauge.label}
+        </span>
+        <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+          涨跌{fearGauge.drawdown} · 波动{fearGauge.rsi} · 换手{fearGauge.macd}
+        </span>
+      </Flex>
+      <Progress
+        percent={fearGauge.overall}
+        size="small"
+        showInfo={false}
+        strokeColor={fc.bar}
+        trailColor="var(--border-secondary)"
+      />
+    </div>
   );
 }

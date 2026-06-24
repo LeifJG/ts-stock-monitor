@@ -105,15 +105,34 @@ export interface PositionMetrics {
 
 /** 安全边际评分 */
 export interface SafetyScore {
+  // ── 原字段（保留兼容） ──
   grahamNumber: number | null;   // 格雷厄姆估值（元）
   marginOfSafety: number | null; // 安全边际百分比 (%)
-  score: number | null;          // 评分 0-100（保守）
-  grade: SafetyGrade;            // 等级
-  // ROE修正版: 对高PB白马股更友好
-  roeAdjustedValue: number | null;  // ROE修正估值（元）
-  roeMarginOfSafety: number | null; // 修正安全边际 (%)
-  roeScore: number | null;          // 修正评分 0-100
-  roeGrade: SafetyGrade;            // 修正等级
+  score: number | null;          // 综合评分 0-100（各模型加权）
+  grade: SafetyGrade;            // 综合等级
+  // ROE修正版（已被新模型取代，保留避免前端报错）
+  roeAdjustedValue: number | null;
+  roeMarginOfSafety: number | null;
+  roeScore: number | null;
+  roeGrade: SafetyGrade;
+
+  // ── 新模型 ──
+  // 1. 格雷厄姆增长版: EPS × (8.5 + 2g)
+  grahamGrowthValue: number | null;
+  grahamGrowthMargin: number | null;
+  grahamGrowthScore: number | null;
+  grahamGrowthGrade: SafetyGrade;
+  // 2. 股息贴现模型（DDM）
+  ddmValue: number | null;
+  ddmMargin: number | null;
+  ddmScore: number | null;
+  ddmGrade: SafetyGrade;
+  // 3. 各模型详情（调试用）
+  models: {
+    graham: { value: number; margin: number; score: number } | null;
+    growth: { value: number; margin: number; score: number; g: number } | null;
+    ddm: { value: number; margin: number; score: number; g: number } | null;
+  };
 }
 
 export type SafetyGrade = "优秀" | "良好" | "一般" | "危险" | "未知";
@@ -121,10 +140,17 @@ export type SafetyGrade = "优秀" | "良好" | "一般" | "危险" | "未知";
 /** 单只股票的恐慌指数 0-100（0=极度贪婪，100=极度恐慌） */
 export interface FearGauge {
   overall: number;              // 综合恐慌指数
-  drawdown: number;             // 涨跌幅贡献分
-  rsi: number;                  // 振幅贡献分
-  macd: number;                 // 换手率贡献分
+  drawdown: number;             // 涨跌幅贡献分（保留兼容）
+  rsi: number;                  // 振幅贡献分（保留兼容）
+  macd: number;                 // 换手率贡献分（保留兼容）
   label: string;                // 中文标签
+  // ── 新版技术指标（可选，旧数据兼容） ──
+  rsi14?: number;               // RSI(14)
+  ma20?: number;                // 20日均线价格
+  priceVsMa20Pct?: number;      // 价格偏离MA20百分比
+  volumeRatio?: number;         // 量比
+  change5dPct?: number;         // 5日涨跌幅
+  amplitudeRatio?: number;      // 振幅比
 }
 
 /** 单只股票的完整数据 */
@@ -254,3 +280,51 @@ export interface PortfolioSummaryExtended {
 
 /** 视图模式 */
 export type ViewMode = "card" | "table";
+
+// ============================================================
+// N. 网格交易助手类型
+// ============================================================
+
+/** 网格等级配置 */
+export interface GridLevelConfig {
+  type: "buy" | "sell";
+  price: number;
+  pct: number;          // 距现价百分比（负值=下跌，正值=上涨）
+  shares: number;       // 该级别买卖股数
+  cost: number;         // 该级别金额（买入需资金，卖出得现金）
+  label: string;
+}
+
+/** 单只股票的网格计划 */
+export interface GridPlan {
+  stockCode: StockCode;
+  stockName: string;
+  currentPrice: number;
+  buyPrice: number;
+  volatility: number;       // |现价-成本|/成本 * 100
+  stepPct: number;          // 网格步长(%)
+  buyLevels: GridLevelConfig[];
+  sellLevels: GridLevelConfig[];
+  // 统计
+  positionShares: number;
+  sharesPerLevel: number;   // 每级股数
+  capitalNeeded: number;    // 填满所有买入级需资金
+  totalProceeds: number;    // 所有卖出级可回收现金
+  strategy: GridStrategy;   // 使用的策略
+  baseShares: number;       // 底仓保留股数
+  sellRatio: number;        // 卖出网格占总仓位 %
+}
+
+/** 网格策略 */
+export type GridStrategy = "full" | "base" | "cash" | "buyOnly";
+
+/** 网格参数设置（用户可调） */
+export interface GridSettings {
+  strategy: GridStrategy;    // 策略模式
+  stepPct: number;          // 步长(%)
+  buyCount: number;         // 买入级数（1-8）
+  sellCount: number;        // 卖出级数（1-6）
+  sharesPerLevel: number;   // 每级股数（0=自动按仓位30%÷级数）
+  baseShares: number;       // 底仓模式：保留不卖的股数
+  cashPerLevel: number;     // 现金模式：每级投入现金
+}

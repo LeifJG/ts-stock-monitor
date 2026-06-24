@@ -18,6 +18,10 @@ import os
 import math
 from datetime import datetime
 
+# 导入统一股息率模块
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+from dividend_data import batch_fetch as batch_fetch_dividends, get_dividend_yield as calc_dividend_yield
+
 os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
 os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
 
@@ -80,11 +84,39 @@ def fetch_tencent_quotes(codes: list) -> dict:
 
         is_hk = match.group(1) == "hk"
         pe = float(fields[39]) if fields[39] else None
+        pb = float(fields[46]) if not is_hk and fields[46] else None
 
-        # 股息率估算
+        # ROE = PB / PE（杜邦最简形式）
+        roe_val = None
+        if pb and pe and pe > 0:
+            calc_roe = (pb / pe) * 100
+            if calc_roe < 100:
+                roe_val = round(calc_roe, 2)
+        # 腾讯直给的 ROE 做备选
+        if roe_val is None and not is_hk and len(fields) > 66:
+            try:
+                roe_val = float(fields[66]) if fields[66] and float(fields[66]) > 0 else None
+            except (ValueError, IndexError):
+                pass
+
+        # 股息率估算 - 用更现实的分红比例
         div_yield = None
         if pe and pe > 0:
-            payout = 0.40 if is_hk else 0.30
+            if is_hk:
+                # 港股普遍分红比例较高
+                payout = 0.45
+            elif roe_val and roe_val > 20:
+                # 高ROE成熟公司分红比例 40-50%
+                payout = 0.45
+            elif roe_val and roe_val > 15:
+                payout = 0.42
+            elif roe_val and roe_val > 10:
+                payout = 0.40
+            elif roe_val and roe_val > 5:
+                payout = 0.35
+            else:
+                # 未知ROE时用偏保守但合理的估计
+                payout = 0.35
             div_yield = round((payout / pe) * 100, 2)
 
         result[code] = {
@@ -95,10 +127,27 @@ def fetch_tencent_quotes(codes: list) -> dict:
             "high": high,
             "low": low,
             "pe": pe,
+            "roe": roe_val,
             "dividendYield": div_yield,
         }
 
     return result
+
+
+def fetch_dividend_yields(codes: list) -> dict:
+    """
+    统一股息率数据源（复用 dividend_data 模块）
+    从 cninfo 获取最近12个月的真实每股股利合计（TTM）
+    返回: { code: {"dividend_per_share": float} | None }
+    """
+    raw = batch_fetch_dividends(codes)
+    results = {}
+    for code, entry in raw.items():
+        if entry and entry.get("dividend_per_share"):
+            results[code] = {"dividend_per_share": entry["dividend_per_share"]}
+        else:
+            results[code] = None
+    return results
 
 
 # ─── 分析策略 ────────────────────────────────────────────────
@@ -370,6 +419,25 @@ def main():
     # 获取所有股票代码和当前行情
     codes = [p["stockCode"] for p in portfolio]
     quotes = fetch_tencent_quotes(codes)
+
+    # 从 cninfo 获取真实每股股利（并行，严格可靠）
+    # 策略：用真实每股股利算出现价股息率，再和 ROE 估值取大值
+    try:
+        em_divs = fetch_dividend_yields(codes)
+        for code, div_data in em_divs.items():
+            if div_data and div_data.get("dividend_per_share") is not None and code in quotes:
+                dps = div_data["dividend_per_share"]
+                price = quotes[code].get("price", 0)
+                if price > 0:
+                    real_dy = (dps / price) * 100
+                else:
+                    real_dy = 0
+                est_dy = quotes[code].get("dividendYield", 0) or 0
+                best_dy = round(max(real_dy, est_dy), 2)
+                quotes[code]["dividendYield"] = best_dy
+                quotes[code]["dividendPerShare"] = dps
+    except Exception:
+        pass  # cninfo 不可用时静默回退到估值
 
     # 逐个分析
     advice = []

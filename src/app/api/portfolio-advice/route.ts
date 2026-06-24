@@ -23,6 +23,14 @@ function runAnalysis(): any {
   }
 
   const scriptPath = path.join(process.cwd(), "scripts", "portfolio_advice.py");
+  // 优先用 Hermes 虚拟环境的 Python（有 akshare + pandas）
+  const pythonBin = (() => {
+    const home = process.env.HOME || "/home/lijg";
+    const venvPython = path.join(home, ".hermes", "hermes-agent", "venv", "bin", "python3");
+    const fs = require("fs");
+    if (fs.existsSync(venvPython)) return venvPython;
+    return "python3";
+  })();
   const env = {
     ...process.env,
     http_proxy: process.env.http_proxy || "http://192.168.124.11:7890",
@@ -32,7 +40,7 @@ function runAnalysis(): any {
   };
 
   const output = execSync(
-    `python3 "${scriptPath}" --portfolio "${PORTFOLIO_FILE}"`,
+    `"${pythonBin}" "${scriptPath}" --portfolio "${PORTFOLIO_FILE}"`,
     { encoding: "utf-8", timeout: 30000, env }
   );
 

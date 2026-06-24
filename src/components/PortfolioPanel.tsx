@@ -12,8 +12,9 @@ import {
 import {
   PlusOutlined, DeleteOutlined, DollarOutlined,
   FundOutlined, RiseOutlined, FallOutlined,
-  GiftOutlined, WalletOutlined,
+  GiftOutlined, WalletOutlined, PieChartOutlined,
 } from "@ant-design/icons";
+import DonutChart from "./DonutChart";
 import type { Position, PositionMetrics, StockData } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { usePortfolioSync } from "@/hooks/usePortfolioSync";
@@ -96,11 +97,11 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       render: (_: any, r: Position) => {
         const sd = stockDataMap.get(r.stockCode);
         const color = sd?.quote.changePercent
-          ? (sd.quote.changePercent > 0 ? "#ef4444" : sd.quote.changePercent < 0 ? "#22c55e" : "#9ca3af")
-          : "#9ca3af";
+          ? (sd.quote.changePercent > 0 ? "var(--red)" : sd.quote.changePercent < 0 ? "var(--green)" : "var(--text-tertiary)")
+          : "var(--text-tertiary)";
         return (
           <div>
-            <div style={{ fontWeight: 500, color: "#111827", fontSize: 13 }}>{r.stockName}</div>
+            <div style={{ fontWeight: 500, color: "var(--text-primary)", fontSize: 13 }}>{r.stockName}</div>
             <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, color }}>
               ¥{fmt(sd?.quote.currentPrice ?? r.buyPrice)}
               {sd?.quote.changePercent != null && (
@@ -152,7 +153,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
             ? r.dividends.map((d) => `${d.date} ¥${d.perShare}/股 × ${fmt(d.total)}`).join("\n")
             : "暂无分红记录"
         }>
-          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "#16a34a", cursor: "help" }}>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "var(--green)", cursor: "help" }}>
             ¥{fmt(metrics.get(r.id)?.totalDividends)}
           </span>
         </Tooltip>
@@ -167,9 +168,9 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       },
       render: (_: any, r: Position) => {
         const rc = metrics.get(r.id)?.realCost;
-        const col = rc != null && rc < r.totalCost ? "#16a34a" : undefined;
+        const col = rc != null && rc < r.totalCost ? "var(--green)" : undefined;
         return (
-          <Tooltip title="总投入 - 累计分红，越拿越便宜" color="#1f2937">
+          <Tooltip title="总投入 - 累计分红，越拿越便宜" color="#27272a">
             <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: col, cursor: "help" }}>
               ¥{fmt(rc)}
             </span>
@@ -186,7 +187,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       },
       render: (_: any, r: Position) => {
         const y = metrics.get(r.id)?.costYield;
-        const col = y != null && y > 8 ? "#16a34a" : y != null && y > 5 ? "#2563eb" : undefined;
+        const col = y != null && y > 8 ? "var(--green)" : y != null && y > 5 ? "var(--blue)" : undefined;
         return (
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, fontWeight: y != null && y > 8 ? 700 : 400, color: col }}>
             {y != null ? y.toFixed(2) + "%" : "--"}
@@ -204,7 +205,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       render: (_: any, r: Position) => {
         const m = metrics.get(r.id);
         if (!m) return "--";
-        const col = m.totalProfit > 0 ? "#ef4444" : m.totalProfit < 0 ? "#22c55e" : "#9ca3af";
+        const col = m.totalProfit > 0 ? "var(--red)" : m.totalProfit < 0 ? "var(--green)" : "var(--text-tertiary)";
         return (
           <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, textAlign: "right" }}>
             <div style={{ color: col, fontWeight: Math.abs(m.totalProfitPct) > 20 ? 700 : 400 }}>
@@ -254,34 +255,95 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         </Button>
       }
     >
-      {/* ═══ 汇总统计 ═══ */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Statistic title="总投入" value={summary.totalInvested} prefix="¥" precision={2}
-            valueStyle={{ fontSize: 18, fontWeight: 600 }} />
-        </Col>
-        <Col span={6}>
-          <Statistic title="当前市值" value={summary.totalMarketValue} prefix="¥" precision={2}
-            valueStyle={{ fontSize: 18, fontWeight: 600 }} />
-        </Col>
-        <Col span={6}>
-          <Statistic title="累计分红" value={summary.totalDividends} prefix="¥" precision={2}
-            valueStyle={{ fontSize: 18, color: "#16a34a", fontWeight: 600 }} />
-        </Col>
-        <Col span={6}>
-          <Statistic
-            title="总盈亏"
-            value={summary.totalProfit}
-            prefix={summary.totalProfit >= 0 ? "+" : ""}
-            suffix={summary.totalProfitPct != 0 ? `(${fmtPct(summary.totalProfitPct)})` : ""}
-            precision={2}
-            valueStyle={{
+      {/* ═══ 汇总统计 + 持仓分布环形图 ═══ */}
+      <Flex gap={16} style={{ marginBottom: 16 }} align="start">
+        {/* 左侧：SVG 环形图 + 图例 */}
+        {positions.length > 0 && (
+          <Flex gap={12} align="center" style={{
+            padding: "12px 16px",
+            borderRadius: 8,
+            background: "var(--bg-card)",
+            boxShadow: "var(--card-shadow)",
+            flexShrink: 0,
+          }}>
+            <DonutChart
+              positions={positions}
+              getMarketValue={(p) => {
+                const sd = stockDataMap.get(p.stockCode);
+                const price = sd?.quote.currentPrice ?? p.buyPrice;
+                return p.shares * price;
+              }}
+              getLabel={(p) => p.stockName}
+              size={120}
+            />
+            <div style={{ width: 140 }}>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>持仓分布</div>
+              {positions.slice(0, 6).map((p, i) => {
+                const mv = (() => {
+                  const sd = stockDataMap.get(p.stockCode);
+                  return (sd?.quote.currentPrice ?? p.buyPrice) * p.shares;
+                })();
+                const total = positions.reduce((s, pp) => {
+                  const sd2 = stockDataMap.get(pp.stockCode);
+                  return s + (sd2?.quote.currentPrice ?? pp.buyPrice) * pp.shares;
+                }, 0);
+                const pct = total > 0 ? (mv / total) * 100 : 0;
+                const colors = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#06b6d4"];
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, marginBottom: 2 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 2, background: colors[i % colors.length], flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
+                      {p.stockName}
+                    </span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "var(--text-tertiary)" }}>
+                      {pct.toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+              {positions.length > 6 && (
+                <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 2 }}>
+                  +{positions.length - 6} 只
+                </div>
+              )}
+            </div>
+          </Flex>
+        )}
+
+        {/* 右侧：统计数据 */}
+        <Flex gap={16} wrap="wrap" style={{ flex: 1 }}>
+          <div style={{ minWidth: 110 }}>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>总投入</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
+              ¥{fmt(summary.totalInvested)}
+            </div>
+          </div>
+          <div style={{ minWidth: 110 }}>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>当前市值</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
+              ¥{fmt(summary.totalMarketValue)}
+            </div>
+          </div>
+          <div style={{ minWidth: 110 }}>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>累计分红</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--green)" }}>
+              ¥{fmt(summary.totalDividends)}
+            </div>
+          </div>
+          <div style={{ minWidth: 110 }}>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>总盈亏</div>
+            <div style={{
               fontSize: 18, fontWeight: 600,
-              color: summary.totalProfit > 0 ? "#ef4444" : summary.totalProfit < 0 ? "#22c55e" : "#9ca3af",
-            }}
-          />
-        </Col>
-      </Row>
+              color: summary.totalProfit > 0 ? "#ef4444" : summary.totalProfit < 0 ? "#22c55e" : "var(--text-primary)",
+            }}>
+              {summary.totalProfit >= 0 ? "+" : ""}¥{fmt(Math.abs(summary.totalProfit))}
+              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>
+                ({summary.totalProfit >= 0 ? "+" : ""}{summary.totalProfitPct.toFixed(2)}%)
+              </span>
+            </div>
+          </div>
+        </Flex>
+      </Flex>
 
       {/* ═══ 持仓列表 ═══ */}
       {positions.length === 0 ? (
@@ -331,7 +393,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
             <InputNumber style={{ width: "100%" }} min={0} step={0.01} placeholder="自动计算" />
           </Form.Item>
           <Form.Item name="buyDate" label="买入日期">
-            <input type="date" style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #d9d9d9" }}
+            <input type="date" style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-color)" }}
               defaultValue={new Date().toISOString().slice(0, 10)} />
           </Form.Item>
         </Form>
@@ -355,7 +417,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
             <InputNumber style={{ width: "100%" }} min={0} step={0.01} placeholder="自动计算" />
           </Form.Item>
           <Form.Item name="date" label="到账日期">
-            <input type="date" style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #d9d9d9" }}
+            <input type="date" style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-color)" }}
               defaultValue={new Date().toISOString().slice(0, 10)} />
           </Form.Item>
         </Form>

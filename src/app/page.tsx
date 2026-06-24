@@ -5,8 +5,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
-import { Button, Input, Tag, Flex, Typography, Badge, Space } from "antd";
-import { TableOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, PlusOutlined, WalletOutlined, CalendarOutlined, PieChartOutlined, FundOutlined } from "@ant-design/icons";
+import { Button, Input, Tag, Flex, Badge, Space } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -16,6 +16,7 @@ import { useAlertSync } from "@/hooks/useAlertSync";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
+import AppHeader from "@/components/AppHeader";
 import AlertRuleForm from "@/components/AlertRuleForm";
 import AlertRuleList from "@/components/AlertRuleList";
 import RefreshTimer from "@/components/RefreshTimer";
@@ -25,10 +26,15 @@ import PortfolioSummary from "@/components/PortfolioSummary";
 import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
+import GridTradingPanel from "@/components/GridTradingPanel";
+import DataManager from "@/components/DataManager";
+import DailyReport from "@/components/DailyReport";
+import PortfolioMiniCard from "@/components/PortfolioMiniCard";
+import StockScreener from "@/components/StockScreener";
+import { computeAllScores, applyFilters, type ScreenerFilters } from "@/lib/scorer";
+import { DEFAULT_FILTERS } from "@/lib/scorer";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
-
-const { Title, Text } = Typography;
 
 export default function Home() {
   const [watchlist, setWatchlist] = useLocalStorage<StockCode[]>("ts-stock-monitor:watchlist", DEFAULT_WATCHLIST);
@@ -40,6 +46,10 @@ export default function Home() {
   const [showPortfolio, setShowPortfolio] = useLocalStorage("ts-stock-monitor:showPortfolio", false);
   const [showCalendar, setShowCalendar] = useLocalStorage("ts-stock-monitor:showCalendar", false);
   const [showIndustry, setShowIndustry] = useLocalStorage("ts-stock-monitor:showIndustry", false);
+  const [showGrid, setShowGrid] = useLocalStorage("ts-stock-monitor:showGrid", false);
+  const [showReport, setShowReport] = useLocalStorage("ts-stock-monitor:showReport", false);
+  const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
+  const [showScore, setShowScore] = useState(false);
 
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
@@ -79,6 +89,20 @@ export default function Home() {
     return m;
   }, [data]);
 
+  // ── 综合评分 ──────────────────────────────────────────────
+  const scores = useMemo(() => computeAllScores(data), [data]);
+
+  // ── 筛选后数据 ────────────────────────────────────────────
+  const filteredCodes = useMemo(
+    () => applyFilters(data, scores, screenerFilters),
+    [data, scores, screenerFilters]
+  );
+  const filteredData = useMemo(
+    () => data.filter((s) => filteredCodes.has(s.quote.code)),
+    [data, filteredCodes]
+  );
+  const activeFilterCount = Object.values(screenerFilters).filter((v) => v != null).length;
+
   useEffect(() => { evaluate(dataMap); }, [dataMap, evaluate]);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -107,27 +131,32 @@ export default function Home() {
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 48px" }}>
-      {/* ═══ 头部 ═══ */}
-      <Flex justify="space-between" align="center" style={{ marginBottom: 20 }}>
-        <div>
-          <Title level={4} style={{ margin: 0, letterSpacing: "-0.32px", fontWeight: 600 }}>📊 A 股量化看板</Title>
-          <Text type="secondary" style={{ fontSize: 13, marginTop: 2, display: "block" }}>实时行情 · 基本面 · 智能预警</Text>
-        </div>
-        <Flex gap={8} align="center">
-          <Button type={viewMode === "table" ? "primary" : "default"} size="small" icon={<TableOutlined />} onClick={() => setViewMode("table")}>表格</Button>
-          <Button type={viewMode === "card" ? "primary" : "default"} size="small" icon={<AppstoreOutlined />} onClick={() => setViewMode("card")}>卡片</Button>
-          <Badge count={triggers.length} size="small" offset={[2, -2]}>
-            <Button type={showAlertPanel ? "primary" : "default"} size="small" icon={<BellOutlined />} onClick={() => setShowAlertPanel(!showAlertPanel)}>预警</Button>
-          </Badge>
-          <Button type={showCalculator ? "primary" : "default"} size="small" icon={<CalculatorOutlined />} onClick={() => setShowCalculator(!showCalculator)}>定投</Button>
-          <Button type={showPortfolio ? "primary" : "default"} size="small" icon={<WalletOutlined />} onClick={() => setShowPortfolio(!showPortfolio)}>持仓</Button>
-          <Button type={showCalendar ? "primary" : "default"} size="small" icon={<CalendarOutlined />} onClick={() => setShowCalendar(!showCalendar)}>分红日历</Button>
-          <Button type={showIndustry ? "primary" : "default"} size="small" icon={<PieChartOutlined />} onClick={() => setShowIndustry(!showIndustry)}>行业分布</Button>
-        </Flex>
-      </Flex>
+      {/* ═══ 头部（重构：分组下拉） ═══ */}
+      <AppHeader
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        showAlertPanel={showAlertPanel}
+        onAlertPanelToggle={() => setShowAlertPanel(!showAlertPanel)}
+        showCalculator={showCalculator}
+        onCalculatorToggle={() => setShowCalculator(!showCalculator)}
+        showPortfolio={showPortfolio}
+        onPortfolioToggle={() => setShowPortfolio(!showPortfolio)}
+        showCalendar={showCalendar}
+        onCalendarToggle={() => setShowCalendar(!showCalendar)}
+        showIndustry={showIndustry}
+        onIndustryToggle={() => setShowIndustry(!showIndustry)}
+        showGrid={showGrid}
+        onGridToggle={() => setShowGrid(!showGrid)}
+        showReport={showReport}
+        onReportToggle={() => setShowReport(true)}
+        triggerCount={triggers.length}
+      />
 
-      {/* ═══ 大盘指数 ═══ */}
-      <IndexCards indices={indices} loading={indicesLoading} />
+      {/* ═══ 大盘指数 + 组合收益（并排） ═══ */}
+      <Flex gap={12} wrap="wrap" style={{ marginBottom: 16 }}>
+        <IndexCards indices={indices} loading={indicesLoading} />
+        <PortfolioMiniCard stockDataMap={dataMap} />
+      </Flex>
 
       {/* ═══ 定投计算器 ═══ */}
       {showCalculator && <section style={{ marginBottom: 16 }}><DividendCalculator /></section>}
@@ -159,6 +188,16 @@ export default function Home() {
         </section>
       )}
 
+      {/* ═══ 网格交易 ═══ */}
+      {showGrid && (
+        <section style={{ marginBottom: 16 }}>
+          <GridTradingPanel stockDataMap={dataMap} />
+        </section>
+      )}
+
+      {/* ═══ 收盘日报（弹窗）═══ */}
+      <DailyReport open={showReport} onClose={() => setShowReport(false)} />
+
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (
         <section style={{ marginBottom: 16 }}>
@@ -169,11 +208,11 @@ export default function Home() {
               <div style={{ fontSize: 14, fontWeight: 600, color: "#d97706", marginBottom: 6 }}>🔔 当前触发的告警 ({triggers.length})</div>
               {triggers.map((t, i) => (
                 <div key={i} style={{ borderRadius: 6, background: "#fff", padding: "4px 10px", marginBottom: 4, boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.06)" }}>
-                  <Text strong>{t.stockName}</Text>
-                  <Text type="secondary" style={{ margin: "0 4px" }}>-</Text>
-                  <Text style={{ color: "#d97706" }}>{t.ruleLabel}</Text>
-                  <Text type="secondary" style={{ margin: "0 4px" }}>→</Text>
-                  <Text code style={{ fontSize: 12 }}>{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</Text>
+                  <strong>{t.stockName}</strong>
+                  <span style={{ color: "#808080", margin: "0 4px" }}>-</span>
+                  <span style={{ color: "#d97706" }}>{t.ruleLabel}</span>
+                  <span style={{ color: "#808080", margin: "0 4px" }}>→</span>
+                  <code style={{ fontSize: 12, background: "#f5f5f5", padding: "0 4px", borderRadius: 3 }}>{typeof t.currentValue === 'number' ? t.currentValue.toFixed(2) : t.currentValue}</code>
                 </div>
               ))}
             </div>
@@ -192,7 +231,7 @@ export default function Home() {
             ))}
           </Flex>
           {!loading && data.length > 0 && (
-            <Text type="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>{data.length} / {watchlist.length} 只</Text>
+            <span style={{ color: "var(--text-tertiary)", fontSize: 12, marginLeft: "auto" }}>{data.length} / {watchlist.length} 只</span>
           )}
         </Flex>
       </section>
@@ -207,16 +246,34 @@ export default function Home() {
         <section style={{ marginBottom: 12 }}>
           <div style={{ borderRadius: 8, background: "#fffbeb", padding: "8px 16px", boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)" }}>
             <Flex align="center" justify="space-between">
-              <Text style={{ fontSize: 14, fontWeight: 500, color: "#d97706" }}>🔔 {triggers.length} 条告警触发</Text>
+              <span style={{ fontSize: 14, fontWeight: 500, color: "#d97706" }}>🔔 {triggers.length} 条告警触发</span>
               <Button type="link" size="small" onClick={() => setShowAlertPanel(true)} style={{ fontSize: 13 }}>查看详情 →</Button>
             </Flex>
           </div>
         </section>
       )}
 
+      {/* ═══ 智能筛选 ═══ */}
+      <StockScreener
+        filters={screenerFilters}
+        onChange={setScreenerFilters}
+        activeCount={activeFilterCount > 0 ? filteredData.length : data.length}
+        totalCount={data.length}
+      />
+
       {/* ═══ 个股展示 ═══ */}
       {viewMode === "table" ? (
-        <StockTable data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} dividendHistory={dividendHistory} />
+        <StockTable
+          data={activeFilterCount > 0 ? filteredData : data}
+          triggers={triggers}
+          loading={loading}
+          error={error}
+          insiderTrades={insiderTrades}
+          dividendHistory={dividendHistory}
+          scores={scores}
+          showScore={showScore}
+          onToggleScore={() => setShowScore(!showScore)}
+        />
       ) : (
         <StockList data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} dividendHistory={dividendHistory} />
       )}

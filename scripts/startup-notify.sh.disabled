@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# ============================================================
+# startup-notify.sh — 等待 ts-stock-monitor 启动完成，推微信通知
+# ============================================================
+# 被 systemd ExecStartPost 调用，异步等服务 ready 后发通知。
+
+set -euf -o pipefail
+
+# 获取 WSL 真实 IP
+WSL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -n "$WSL_IP" ]; then
+  URL="http://$WSL_IP:3000"
+else
+  URL="http://localhost:3000"
+fi
+MAX_RETRIES=30
+RETRY_INTERVAL=2
+
+# 等服务上线
+for i in $(seq 1 $MAX_RETRIES); do
+  if command -v curl &>/dev/null; then
+    code=$(curl --noproxy '*' -s -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+    if [ "$code" = "200" ]; then
+      break
+    fi
+  fi
+  sleep $RETRY_INTERVAL
+done
+
+# 发微信通知（重试最多60秒，等网关就绪）
+NOTIFY_SCRIPT="$HOME/.local/bin/hermes"
+if [ -x "$NOTIFY_SCRIPT" ]; then
+  for i in $(seq 1 15); do
+    if "$NOTIFY_SCRIPT" send --to weixin:o9cq80_yXOgPn_xv2CUZ6fUeLeeU@im.wechat \
+      "📊 ts-stock-monitor 已启动 ✅
+$URL 可访问" --quiet 2>/dev/null; then
+      exit 0
+    fi
+    sleep 4
+  done
+  # 最后一次尝试，失败也记录下来
+  "$NOTIFY_SCRIPT" send --to weixin:o9cq80_yXOgPn_xv2CUZ6fUeLeeU@im.wechat \
+    "📊 ts-stock-monitor 已启动 ✅
+$URL 可访问" 2>&1 || true
+fi
+
+exit 0

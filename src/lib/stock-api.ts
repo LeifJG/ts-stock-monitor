@@ -7,6 +7,83 @@
 import type { StockCode, StockQuote, StockFundamentals, StockData, IndexData } from "./types";
 import { calcSafetyScore, calcFearGauge } from "./indicators";
 import { isHKStock, getTencentPrefix, getEastMoneySecId } from "./constants";
+import * as fs from "fs";
+import * as path from "path";
+
+const DIVIDEND_CACHE_FILE = path.join(process.cwd(), "data", "dividend_yields.json");
+const FEAR_TECH_CACHE_FILE = path.join(process.cwd(), "data", "fear_tech_cache.json");
+
+/**
+ * 读取统一股息率缓存（cninfo 真实数据，由 dividend_data.py 维护）
+ * 返回: { code: { dividend_per_share: number } } 或 null
+ */
+let _dividendCache: Record<string, { dividend_per_share: number }> | null = null;
+let _cacheMtime = 0;
+
+function readDividendYieldCache(): Record<string, { dividend_per_share: number }> | null {
+  try {
+    // 检查文件变更
+    const stat = fs.statSync(DIVIDEND_CACHE_FILE);
+    if (stat.mtimeMs === _cacheMtime && _dividendCache) {
+      return _dividendCache;
+    }
+    const raw = fs.readFileSync(DIVIDEND_CACHE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+
+    // 过滤出有 dividend_per_share 的条目
+    const result: Record<string, { dividend_per_share: number }> = {};
+    for (const [code, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === "object" && (entry as any).dividend_per_share != null) {
+        result[code] = { dividend_per_share: (entry as any).dividend_per_share };
+      }
+    }
+    _dividendCache = result;
+    _cacheMtime = stat.mtimeMs;
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ── 恐慌指数技术指标缓存（由 fear_tech_data.py 维护） ─────────
+interface FearTechEntry {
+  rsi_14?: number | null;
+  price_vs_ma20_pct?: number | null;
+  volume_ratio?: number | null;
+  change_5d_pct?: number | null;
+  amplitude_ratio?: number | null;
+}
+
+let _fearTechCache: Record<string, FearTechEntry> | null = null;
+let _fearCacheMtime = 0;
+
+function readFearTechCache(): Record<string, FearTechEntry> | null {
+  try {
+    const stat = fs.statSync(FEAR_TECH_CACHE_FILE);
+    if (stat.mtimeMs === _fearCacheMtime && _fearTechCache) {
+      return _fearTechCache;
+    }
+    const raw = fs.readFileSync(FEAR_TECH_CACHE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const result: Record<string, FearTechEntry> = {};
+    for (const [code, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === "object") {
+        result[code] = {
+          rsi_14: (entry as any).rsi_14 ?? null,
+          price_vs_ma20_pct: (entry as any).price_vs_ma20_pct ?? null,
+          volume_ratio: (entry as any).volume_ratio ?? null,
+          change_5d_pct: (entry as any).change_5d_pct ?? null,
+          amplitude_ratio: (entry as any).amplitude_ratio ?? null,
+        };
+      }
+    }
+    _fearTechCache = result;
+    _fearCacheMtime = stat.mtimeMs;
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 // ─── 代理配置 ──────────────────────────────────────────────────
 
@@ -320,6 +397,10 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       const d = tencentData.get(code)!;
       const em = emFin.get(code);
 
+      // ── 恐慌指数技术指标 ─────────────────────────────────
+      const fearTech = readFearTechCache();
+      const ftEntry = fearTech?.[d.code];
+
       const quote: StockQuote = {
         code: d.code,
         name: d.name,
@@ -354,47 +435,58 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         ? Math.round((d.currentPrice / d.pe) * 1000) / 1000
         : null;
 
-      // ── 股息率估计 ──────────────────────────────────────────
-      // 东财优先，拿不到则用 ROE + PE 推算：
-      //   假定分红比例( payoutRatio )与 ROE 挂钩：
-      //     ROE > 20% → 成长型，30% 利润分红
-      //     ROE 10-20% → 成熟型，45% 分红
-      //     ROE 5-10% → 低增长型，55% 分红
-      //     ROE < 5% → 不分红或不稳定
-      //   股息率 ≈ (payoutRatio * EPS) / 价格 = payoutRatio / PE
-      let divYield = em?.dividendYield ?? null;
+      // ── 股息率（统一数据源） ──────────────────────────────────
+      // 优先顺序：
+      // ① 统一股息率缓存（cninfo 真实数据）— ttm每股分红 / 现价 × 100
+      // ② 东财 f162 字段（不稳定，仅当缓存无数据时尝试）
+      // ③ ROE + PE 推算（当以上都拿不到时的粗略估计）
+      const divCache = readDividendYieldCache();
+      const cacheEntry = divCache?.[d.code];
+
+      let divYield: number | null = null;
       let dividendPayoutRatio: number | null = null;
 
-      if (divYield == null && d.pe != null && d.pe > 0) {
-        if (roe != null) {
-          // 用 ROE 推算估计分红比例（A股）
-          let estimatedPayout = 0.3;
-          if (roe > 20) estimatedPayout = 0.30;
-          else if (roe > 15) estimatedPayout = 0.35;
-          else if (roe > 10) estimatedPayout = 0.45;
-          else if (roe > 5) estimatedPayout = 0.55;
-          else estimatedPayout = 0;
+      if (cacheEntry?.dividend_per_share != null && d.currentPrice > 0) {
+        // ① 缓存命中 — 用 cninfo 真实数据
+        divYield = Math.round((cacheEntry.dividend_per_share / d.currentPrice) * 10000) / 100;
+        // 计算真实支付率
+        if (eps != null && eps > 0) {
+          dividendPayoutRatio = Math.round((cacheEntry.dividend_per_share / eps) * 100 * 100) / 100;
+          if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
+        }
+      } else {
+        // ② 缓存未命中 — 尝试东财 f162
+        divYield = em?.dividendYield ?? null;
 
-          if (estimatedPayout > 0) {
-            const estimatedDivYield = (estimatedPayout / d.pe) * 100;
+        if (divYield == null && d.pe != null && d.pe > 0) {
+          if (roe != null) {
+            // ③ ROE + PE 推算
+            let estimatedPayout = 0.4;
+            if (roe > 20) estimatedPayout = 0.45;
+            else if (roe > 15) estimatedPayout = 0.42;
+            else if (roe > 10) estimatedPayout = 0.40;
+            else if (roe > 5) estimatedPayout = 0.35;
+            else estimatedPayout = 0.30;
+
+            if (estimatedPayout > 0) {
+              const estimatedDivYield = (estimatedPayout / d.pe) * 100;
+              if (estimatedDivYield < 15) {
+                divYield = Math.round(estimatedDivYield * 100) / 100;
+                dividendPayoutRatio = Math.round(estimatedPayout * 100 * 100) / 100;
+              }
+            }
+          } else if (isHKStock(d.code)) {
+            const estimatedDivYield = (0.40 / d.pe) * 100;
             if (estimatedDivYield < 15) {
               divYield = Math.round(estimatedDivYield * 100) / 100;
-              dividendPayoutRatio = Math.round(estimatedPayout * 100 * 100) / 100;
+              dividendPayoutRatio = 40;
             }
           }
-        } else if (isHKStock(d.code)) {
-          // 港股无ROE数据，使用保守估算：平均分红比例 40%
-          const estimatedDivYield = (0.40 / d.pe) * 100;
-          if (estimatedDivYield < 15) {
-            divYield = Math.round(estimatedDivYield * 100) / 100;
-            dividendPayoutRatio = 40;
-          }
+        } else if (divYield != null && eps != null && eps > 0) {
+          const divPerShare = (divYield / 100) * d.currentPrice;
+          dividendPayoutRatio = Math.round((divPerShare / eps) * 100 * 100) / 100;
+          if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
         }
-      } else if (divYield != null && eps != null && eps > 0) {
-        // 东财数据可用：计算真实支付率
-        const divPerShare = (divYield / 100) * d.currentPrice;
-        dividendPayoutRatio = Math.round((divPerShare / eps) * 100 * 100) / 100;
-        if (dividendPayoutRatio > 500) dividendPayoutRatio = null;
       }
 
       // ── 资产负债率 ──────────────────────────────────────────
@@ -415,11 +507,23 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       };
 
       const safetyScore = calcSafetyScore(
-        d.currentPrice, d.pe, d.pb, roe
+        d.currentPrice, d.pe, d.pb, roe,
+        {
+          dividendYield: divYield,
+          dividendPayoutRatio,
+          dividendPerShare: cacheEntry?.dividend_per_share ?? null,
+        }
       );
 
       const fearGauge = calcFearGauge(
-        d.changePercent, d.high, d.low, d.prevClose, d.turnoverRate
+        d.changePercent, d.high, d.low, d.prevClose, d.turnoverRate,
+        ftEntry ? {
+          rsi14: ftEntry.rsi_14 ?? null,
+          priceVsMa20Pct: ftEntry.price_vs_ma20_pct ?? null,
+          volumeRatio: ftEntry.volume_ratio ?? null,
+          change5dPct: ftEntry.change_5d_pct ?? null,
+          amplitudeRatio: ftEntry.amplitude_ratio ?? null,
+        } : null
       );
 
       return {

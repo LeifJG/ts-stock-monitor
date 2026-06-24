@@ -5,13 +5,16 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Table, Input, Tooltip, Tag } from "antd";
-import { SearchOutlined, ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
+import { Table, Input, Tooltip, Tag, Flex } from "antd";
+import { SearchOutlined, ArrowUpOutlined, ArrowDownOutlined, StarOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { StockData, AlertTrigger, SortField, SortOrder, InsiderTrade } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
 import InsiderBadge from "./InsiderBadge";
 import DividendBadge from "./DividendBadge";
+import { PEBadge, DividendYieldBadge, ROEBadge, SafetyBadge } from "./MetricBadges";
+import { fmt } from "@/lib/format";
+import type { ScoreResult } from "@/lib/scorer";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -37,38 +40,27 @@ function ColLabel({ field, label }: { field: string; label: string }) {
     <Tooltip
       title={
         <div>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>公式</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>公式</div>
           <div style={{ background: "rgba(59,130,246,0.3)", borderRadius: 4, padding: "2px 8px", fontFamily: "monospace", fontSize: 11, color: "#93c5fd", marginBottom: 8 }}>{help.formula}</div>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>含义</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>含义</div>
           <p style={{ fontSize: 11, color: "#d1d5db", margin: 0, lineHeight: 1.6 }}>{help.meaning}</p>
         </div>
       }
       placement="top"
-      color="#1f2937"
+      color="#27272a"
       styles={{ container: { minWidth: 220, padding: "10px 12px" } }}
     >
-      <span style={{ borderBottom: "1px dashed #d1d5db", cursor: "help" }}>{label}</span>
+      <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help", color: "var(--text-secondary)" }}>{label}</span>
     </Tooltip>
   );
-}
-
-// ─── 格式化 ─────────────────────────────────────────────────────
-
-function fmt(v: number | null | undefined, digits = 2): string {
-  if (v == null) return "--";
-  return v.toFixed(digits);
 }
 
 // ─── 异常样式 ──────────────────────────────────────────────────
 
 function priceColor(pct: number): string {
-  if (pct > 9.5) return "#dc2626";
-  if (pct < -9.5) return "#16a34a";
-  if (pct > 5) return "#ef4444";
-  if (pct < -5) return "#22c55e";
-  if (pct > 0) return "#ef4444";
-  if (pct < 0) return "#22c55e";
-  return "#9ca3af";
+  if (pct > 0) return "var(--red)";
+  if (pct < 0) return "var(--green)";
+  return "var(--text-tertiary)";
 }
 
 // ─── 组件 ─────────────────────────────────────────────────────
@@ -80,9 +72,12 @@ interface StockTableProps {
   error: string | null;
   insiderTrades: Map<string, InsiderTrade[]>;
   dividendHistory: Map<string, any>;
+  scores?: Map<string, ScoreResult>;
+  showScore?: boolean;
+  onToggleScore?: () => void;
 }
 
-export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory }: StockTableProps) {
+export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory, scores, showScore, onToggleScore }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
 
   const triggeredCodes = useMemo(() => new Set(triggers.map((t) => t.stockCode)), [triggers]);
@@ -97,7 +92,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
 
   if (error) {
     return (
-      <div style={{ borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", padding: 24, textAlign: "center", color: "#dc2626", fontSize: 14 }}>
+      <div style={{ borderRadius: 12, border: "1px solid var(--red)", background: "var(--alert-bg)", padding: 24, textAlign: "center", color: "var(--red)", fontSize: 14 }}>
         {error}
       </div>
     );
@@ -108,8 +103,58 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: "代码", dataIndex: ["quote", "code"], key: "code",
       sorter: (a, b) => parseInt(a.quote.code) - parseInt(b.quote.code),
       width: 80,
-      render: (code: string) => <span style={{ fontFamily: "monospace", color: "#6b7280" }}>{code}</span>,
+      render: (code: string) => <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>{code}</span>,
     },
+    // ── 综合评分列（条件显示） ──────────────────────────────
+    ...(showScore && scores ? [{
+      title: (
+        <Tooltip title={
+          <div style={{ fontSize: 11, lineHeight: 1.8 }}>
+            <div>股息率 25% + ROE 20% + 安全边际 25%</div>
+            <div>PE 20% + 负债率 10%（越低越好）</div>
+          </div>
+        } color="#27272a">
+          <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help" }}>
+            ⭐ 综合评分
+          </span>
+        </Tooltip>
+      ),
+      key: "compositeScore",
+      width: 90,
+      sorter: (a: StockData, b: StockData) => {
+        const sa = scores.get(a.quote.code)?.total ?? 0;
+        const sb = scores.get(b.quote.code)?.total ?? 0;
+        return sa - sb;
+      },
+      render: (_: any, record: StockData) => {
+        const s = scores.get(record.quote.code);
+        if (!s) return <span style={{ color: "var(--text-tertiary)", fontSize: 12 }}>--</span>;
+        const color = s.total >= 70 ? "var(--green)" : s.total >= 50 ? "var(--gold)" : "var(--red)";
+        const bg = s.total >= 70 ? "rgba(34,197,94,0.12)" : s.total >= 50 ? "rgba(217,119,6,0.12)" : "rgba(239,68,68,0.12)";
+        return (
+          <Tooltip title={
+            <div style={{ fontSize: 11, lineHeight: 1.8 }}>
+              <div>股息率 {s.breakdown.dividendYield}分</div>
+              <div>ROE {s.breakdown.roe}分</div>
+              <div>安全边际 {s.breakdown.safety}分</div>
+              <div>PE {s.breakdown.pe}分</div>
+              <div>负债率 {s.breakdown.debtRatio}分</div>
+            </div>
+          } color="#27272a">
+            <Flex align="center" gap={4} style={{ cursor: "help" }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 6, display: "flex",
+                alignItems: "center", justifyContent: "center",
+                background: bg, color, fontWeight: 700, fontSize: 12,
+              }}>
+                {s.total}
+              </div>
+              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{s.grade}</span>
+            </Flex>
+          </Tooltip>
+        );
+      },
+    }] as ColumnsType<StockData> : []),
     {
       title: "名称", dataIndex: ["quote", "name"], key: "name",
       width: 100,
@@ -117,7 +162,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       render: (name: string, record) => {
         const hasAlert = triggeredCodes.has(record.quote.code);
         return (
-          <span style={{ fontWeight: 500, color: hasAlert ? "#d97706" : "#111827" }}>
+          <span style={{ fontWeight: 500, color: hasAlert ? "var(--gold)" : "var(--text-primary)" }}>
             {hasAlert && <span style={{ marginRight: 4 }}>🔔</span>}
             {name}
           </span>
@@ -128,7 +173,25 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: "现价", dataIndex: ["quote", "currentPrice"], key: "currentPrice",
       sorter: (a, b) => a.quote.currentPrice - b.quote.currentPrice,
       width: 80,
-      render: (v: number) => <span style={{ fontFamily: "monospace" }}>{fmt(v, 2)}</span>,
+      render: (v: number) => <span style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>{fmt(v, 2)}</span>,
+    },
+    {
+      title: <ColLabel field="pe" label="PE" />,
+      key: "pe",
+      sorter: (a, b) => (a.fundamentals.pe ?? 999) - (b.fundamentals.pe ?? 999),
+      width: 110,
+      render: (_, r) => <PEBadge pe={r.fundamentals.pe} />,
+    },
+    {
+      title: <ColLabel field="pb" label="PB" />,
+      key: "pb",
+      sorter: (a, b) => (a.fundamentals.pb ?? 999) - (b.fundamentals.pb ?? 999),
+      width: 100,
+      render: (_, r) => {
+        const pb = r.fundamentals.pb;
+        const col = pb != null ? (pb < 1 ? "var(--green)" : pb < 3 ? "var(--blue)" : pb < 5 ? "var(--gold)" : "var(--red)") : undefined;
+        return <span style={{ fontFamily: "monospace", color: col, fontWeight: pb != null && pb < 1 ? 700 : 400 }}>{pb?.toFixed(2) ?? "--"}</span>;
+      },
     },
     {
       title: <span style={{ color: priceColor(10) }}>涨跌幅</span>,
@@ -149,12 +212,8 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: <ColLabel field="dividendYield" label="股息率" />,
       key: "dividendYield",
       sorter: (a, b) => (a.fundamentals.dividendYield ?? -999) - (b.fundamentals.dividendYield ?? -999),
-      width: 85,
-      render: (_, r) => {
-        const v = r.fundamentals.dividendYield;
-        const isHigh = v != null && v > 5;
-        return <span style={{ fontFamily: "monospace", color: isHigh ? "#16a34a" : undefined, fontWeight: isHigh ? 700 : 400 }}>{fmt(v, 2)}%</span>;
-      },
+      width: 110,
+      render: (_, r) => <DividendYieldBadge value={r.fundamentals.dividendYield} />,
     },
     {
       title: "分红历史",
@@ -169,7 +228,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       width: 85,
       render: (_, r) => {
         const v = r.fundamentals.turnoverRate;
-        const col = v != null && v > 10 ? "#ea580c" : v != null && v > 5 ? "#f97316" : undefined;
+        const col = v != null && v > 10 ? "var(--red)" : v != null && v > 5 ? "var(--gold)" : undefined;
         return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 10 ? 700 : 400 }}>{fmt(v, 2)}%</span>;
       },
     },
@@ -177,11 +236,8 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: <ColLabel field="roe" label="ROE" />,
       key: "roe",
       sorter: (a, b) => (a.fundamentals.roe ?? -999) - (b.fundamentals.roe ?? -999),
-      width: 75,
-      render: (_, r) => {
-        const v = r.fundamentals.roe;
-        return <span style={{ fontFamily: "monospace", color: v != null && v > 20 ? "#16a34a" : undefined, fontWeight: v != null && v > 20 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
-      },
+      width: 110,
+      render: (_, r) => <ROEBadge roe={r.fundamentals.roe} />,
     },
     {
       title: <ColLabel field="dividendPayoutRatio" label="支付率" />,
@@ -190,7 +246,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       width: 80,
       render: (_, r) => {
         const v = r.fundamentals.dividendPayoutRatio;
-        const col = v != null && v > 100 ? "#ef4444" : v != null && v < 30 ? "#eab308" : undefined;
+        const col = v != null && v > 100 ? "var(--red)" : v != null && v < 30 ? "var(--gold)" : undefined;
         return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 100 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
       },
     },
@@ -201,7 +257,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       width: 80,
       render: (_, r) => {
         const v = r.fundamentals.debtRatio;
-        const col = v != null && v > 70 ? "#ef4444" : v != null && v > 50 ? "#f97316" : undefined;
+        const col = v != null && v > 70 ? "var(--red)" : v != null && v > 50 ? "var(--gold)" : undefined;
         return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 70 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
       },
     },
@@ -212,37 +268,16 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       width: 60,
       render: (_, r) => {
         const v = r.fearGauge?.overall;
-        return <span style={{ fontFamily: "monospace", color: v != null ? (v < 40 ? "#22c55e" : v < 60 ? "#eab308" : "#ef4444") : undefined }}>{v ?? "--"}</span>;
+        const col = v != null ? (v < 40 ? "var(--green)" : v < 60 ? "var(--gold)" : "var(--red)") : undefined;
+        return <span style={{ fontFamily: "monospace", color: col }}>{v ?? "--"}</span>;
       },
     },
     {
       title: <ColLabel field="safetyScore" label="安全" />,
       key: "safetyScore",
       sorter: (a, b) => ((a.safetyScore?.score ?? -1) - (b.safetyScore?.score ?? -1)) || ((a.safetyScore?.roeScore ?? -1) - (b.safetyScore?.roeScore ?? -1)),
-      width: 85,
-      render: (_, r) => {
-        const s = r.safetyScore;
-        const v = s?.score;
-        const rv = s?.roeScore;
-        const col = v != null ? (v >= 70 ? "#16a34a" : v >= 40 ? "#2563eb" : v >= 10 ? "#eab308" : "#dc2626") : undefined;
-        const rCol = rv != null ? (rv >= 70 ? "#16a34a" : rv >= 40 ? "#2563eb" : rv >= 10 ? "#eab308" : "#dc2626") : undefined;
-        return (
-          <Tooltip title={
-            <div style={{ fontSize: 11, lineHeight: 1.8 }}>
-              <div><strong>格雷厄姆（保守）</strong></div>
-              <div>估值 ¥{s?.grahamNumber ?? "--"} · 安全边际 {s?.marginOfSafety != null ? s.marginOfSafety.toFixed(1) + "%" : "--"}</div>
-              <div style={{ marginTop: 4 }}><strong>ROE修正（合理）</strong></div>
-              <div>估值 ¥{s?.roeAdjustedValue ?? "--"} · 安全边际 {s?.roeMarginOfSafety != null ? s.roeMarginOfSafety.toFixed(1) + "%" : "--"}</div>
-            </div>
-          } color="#1f2937">
-            <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, cursor: "help" }}>
-              <span style={{ color: col }}>{v ?? "--"}</span>
-              <span style={{ color: "#9ca3af", margin: "0 2px" }}>|</span>
-              <span style={{ color: rCol }}>{rv ?? "--"}</span>
-            </span>
-          </Tooltip>
-        );
-      },
+      width: 160,
+      render: (_, r) => <SafetyBadge score={r.safetyScore?.score} />,
     },
     {
       title: "增减持",
@@ -254,10 +289,10 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
 
   return (
     <div>
-      {/* 筛选栏 */}
-      <div style={{ marginBottom: 12 }}>
+      {/* 筛选栏 + 评分切换 */}
+      <Flex align="center" gap={8} style={{ marginBottom: 12 }} wrap="wrap">
         <Input
-          prefix={<SearchOutlined style={{ color: "#9ca3af" }} />}
+          prefix={<SearchOutlined style={{ color: "var(--text-tertiary)" }} />}
           placeholder="筛选代码或名称..."
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
@@ -265,10 +300,20 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           size="small"
           allowClear
         />
-        <span style={{ marginLeft: 8, fontSize: 12, color: "#9ca3af" }}>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {filtered.length} / {data.length} 只
         </span>
-      </div>
+        {scores && (
+          <Tag
+            style={{ borderRadius: 9999, cursor: "pointer", marginLeft: "auto" }}
+            color={showScore ? "blue" : "default"}
+            onClick={onToggleScore}
+          >
+            <StarOutlined style={{ marginRight: 4 }} />
+            {showScore ? "隐藏评分" : "综合评分"}
+          </Tag>
+        )}
+      </Flex>
 
       {/* 表格 */}
       <Table

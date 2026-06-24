@@ -192,6 +192,91 @@ export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps
         </Col>
       </Row>
 
+      {/* 资产分布环形图 */}
+      {positions.length > 1 && (
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-secondary)" }}>
+          <Flex align="center" gap={24} wrap="wrap">
+            {/* SVG 环形图 */}
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              {(() => {
+                const totalMV = positions.reduce((s, p) => {
+                  const sd = stockDataMap.get(p.stockCode);
+                  const price = sd?.quote.currentPrice ?? p.buyPrice;
+                  return s + p.shares * price;
+                }, 0);
+                if (totalMV <= 0) return null;
+                const cx = 60, cy = 60, r = 48, sw = 14;
+                const colors = ["#2563eb","#16a34a","#d97706","#7c3aed","#dc2626","#0891b2","#be185d","#ca8a04","#4f46e5","#0d9488"];
+                let prevAngle = -90;
+                const segments: React.ReactNode[] = [];
+                positions.forEach((p, i) => {
+                  const sd = stockDataMap.get(p.stockCode);
+                  const price = sd?.quote.currentPrice ?? p.buyPrice;
+                  const mv = p.shares * price;
+                  const pct = mv / totalMV;
+                  const angle = pct * 360;
+                  const startAngle = prevAngle;
+                  const endAngle = prevAngle + angle;
+                  const startRad = (startAngle * Math.PI) / 180;
+                  const endRad = (endAngle * Math.PI) / 180;
+                  const x1 = cx + r * Math.cos(startRad);
+                  const y1 = cy + r * Math.sin(startRad);
+                  const x2 = cx + r * Math.cos(endRad);
+                  const y2 = cy + r * Math.sin(endRad);
+                  const largeArc = angle > 180 ? 1 : 0;
+                  segments.push(
+                    <path
+                      key={i}
+                      d={`M ${cx + (r - sw) * Math.cos(startRad)} ${cy + (r - sw) * Math.sin(startRad)} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${cx + (r - sw) * Math.cos(endRad)} ${cy + (r - sw) * Math.sin(endRad)} A ${r - sw} ${r - sw} 0 ${largeArc} 0 ${cx + (r - sw) * Math.cos(startRad)} ${cy + (r - sw) * Math.sin(startRad)} Z`}
+                      fill={colors[i % colors.length]}
+                      opacity={0.85}
+                    >
+                      <title>{p.stockName} {(pct * 100).toFixed(1)}%</title>
+                    </path>
+                  );
+                  prevAngle = endAngle;
+                });
+                return segments;
+              })()}
+              {/* 中心文字 */}
+              <text x="60" y="58" textAnchor="middle" fontSize="18" fontWeight="700" fill="var(--text-primary)">
+                {positions.length}
+              </text>
+              <text x="60" y="72" textAnchor="middle" fontSize="10" fill="var(--text-tertiary)">
+                只持仓
+              </text>
+            </svg>
+
+            {/* 图例 */}
+            <div style={{ flex: 1, minWidth: 180 }}>
+              {(() => {
+                const totalMV = positions.reduce((s, p) => {
+                  const sd = stockDataMap.get(p.stockCode);
+                  const price = sd?.quote.currentPrice ?? p.buyPrice;
+                  return s + p.shares * price;
+                }, 0);
+                const colors = ["#2563eb","#16a34a","#d97706","#7c3aed","#dc2626","#0891b2","#be185d","#ca8a04","#4f46e5","#0d9488"];
+                return positions.map((p, i) => {
+                  const sd = stockDataMap.get(p.stockCode);
+                  const price = sd?.quote.currentPrice ?? p.buyPrice;
+                  const mv = p.shares * price;
+                  const pct = totalMV > 0 ? (mv / totalMV) * 100 : 0;
+                  return (
+                    <Flex key={p.id} align="center" gap={6} style={{ marginBottom: 4 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 2, background: colors[i % colors.length], flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: "var(--text-primary)", flex: 1 }}>{p.stockName}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontFamily: "monospace" }}>
+                        {pct.toFixed(1)}%
+                      </span>
+                    </Flex>
+                  );
+                });
+              })()}
+            </div>
+          </Flex>
+        </div>
+      )}
+
       <div style={{ marginTop: 12, fontSize: 12, color: "#9ca3af" }}>
         共 {positions.length} 只持仓 · {
           summary.totalDividends > 0

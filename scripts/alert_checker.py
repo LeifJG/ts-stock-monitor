@@ -6,12 +6,16 @@ alert_checker.py — 服务端预警检查引擎
 """
 
 import json
-import os
 import re
-import sys
 import urllib.request
+import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# 导入统一股息率模块
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+from dividend_data import batch_fetch, get_dividend_yield
 
 os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
 os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
@@ -77,7 +81,7 @@ def fetch_tencent(codes: list) -> dict:
             "marketCap": mkcap,
             "high": float(fields[33]) if fields[33] else price,
             "low": float(fields[34]) if fields[34] else price,
-            "dividendYield": round((0.40 / pe * 100), 2) if pe and pe > 0 else None,
+            "dividendYield": None,  # 后续由 unify_dividend_yields() 填充
         }
     return result
 
@@ -102,6 +106,27 @@ def get_field_value(stock: dict, field: str) -> float | None:
     if key:
         return stock.get(key)
     return None
+
+
+def unify_dividend_yields(quotes: dict):
+    """
+    用统一股息率模块填充所有行情数据的 dividendYield
+    从 cninfo 缓存读取真实每股分红，按现价计算股息率
+    """
+    if not quotes:
+        return
+    codes = list(quotes.keys())
+    try:
+        div_data = batch_fetch(codes)
+        for code, entry in div_data.items():
+            if code in quotes and entry and entry.get("dividend_per_share"):
+                price = quotes[code].get("price", 0)
+                if price > 0:
+                    dy = get_dividend_yield(entry["dividend_per_share"], price)
+                    if dy is not None:
+                        quotes[code]["dividendYield"] = dy
+    except Exception as e:
+        print(f"WARN: unify_dividend_yields failed: {e}", file=sys.stderr)
 
 
 def check_rule(rule: dict, stock: dict, portfolio_map: dict, upcoming_dividends: list) -> list:
@@ -243,6 +268,8 @@ def main():
 
     # 获取行情
     quotes = fetch_tencent(codes_list) if codes_list else {}
+    # 用统一股息率填充真实数据
+    unify_dividend_yields(quotes)
 
     # 获取分红日历
     upcoming_dividends = []

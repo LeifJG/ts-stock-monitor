@@ -1,22 +1,65 @@
 @import "tailwindcss";
 
-/* ─── Vercel 风格全局覆写 ──────────────────────────────────── */
-
-/* 边距重置 */
-* { box-sizing: border-box; }
-
-/* 告警行高亮 */
-.ant-table-row-alert td {
-  background-color: #fffbeb !important;
+/* ─── 浅色/深色 CSS 变量 ──────────────────────────────────── */
+:root {
+  --bg-layout: #fafafa;
+  --bg-card: #ffffff;
+  --bg-elevated: #ffffff;
+  --text-primary: #171717;
+  --text-secondary: #4d4d4d;
+  --text-tertiary: #808080;
+  --border-color: rgba(0,0,0,0.08);
+  --border-secondary: rgba(0,0,0,0.06);
+  --hover-bg: #f5f5f5;
+  --red: #ef4444;
+  --green: #22c55e;
+  --gold: #d97706;
+  --blue: #3b82f6;
+  --card-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+  --alert-bg: #fffbeb;
+  --alert-text: #d97706;
 }
 
-/* antd Card 边框用 shadow 代替 */
+.dark {
+  --bg-layout: #09090b;
+  --bg-card: #18181b;
+  --bg-elevated: #1f1f23;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --border-color: rgba(255,255,255,0.08);
+  --border-secondary: rgba(255,255,255,0.06);
+  --hover-bg: #27272a;
+  --red: #ef4444;
+  --green: #22c55e;
+  --gold: #f59e0b;
+  --blue: #60a5fa;
+  --card-shadow: 0px 0px 0px 1px rgba(255,255,255,0.08);
+  --alert-bg: #1c1917;
+  --alert-text: #fbbf24;
+}
+
+/* ─── 全局重置 ────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg-layout);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ─── 告警行高亮（表格行） ─────────────────────────────────── */
+.ant-table-row-alert td {
+  background-color: var(--alert-bg) !important;
+}
+
+/* ─── Card 用 shadow 代替边框 ─────────────────────────────── */
 .ant-card {
-  box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08) !important;
+  box-shadow: var(--card-shadow) !important;
   border-color: transparent !important;
 }
 
-/* Table 内部单元格用极淡分隔 */
+/* ─── Table 头 ─────────────────────────────────────────────── */
 .ant-table-thead > tr > th {
   font-weight: 500 !important;
   font-size: 12px !important;
@@ -25,10 +68,25 @@
 }
 
 .ant-table-tbody > tr > td {
-  border-bottom: 1px solid rgba(0,0,0,0.04) !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
 }
 
-/* 选中后不要蓝色高亮块 */
 .ant-select-focused:not(.ant-select-disabled).ant-select:not(.ant-select-customize-input) .ant-select-selector {
   box-shadow: 0 0 0 2px rgba(0,0,0,0.06) !important;
 }
+
+/* ─── 滚动条暗色适配 ──────────────────────────────────────── */
+.dark ::-webkit-scrollbar-track {
+  background: #1a1a1e;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* ─── 工具类 ────────────────────────────────────────────────── */
+.text-red { color: var(--red); }
+.text-green { color: var(--green); }
