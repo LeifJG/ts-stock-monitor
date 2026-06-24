@@ -27,6 +27,9 @@ const COL_HELP: Record<string, { formula: string; meaning: string }> = {
   roe: { formula: "PB ÷ PE × 100%（或 净利润÷净资产）", meaning: "每 1 元净资产每年能赚多少利润。>20% 优秀，>15% 良好，<5% 低于理财。" },
   dividendPayoutRatio: { formula: "每股分红 ÷ 每股收益 × 100%", meaning: "利润里拿出多少来分红。<30% 偏保守，30-60% 健康，>100% 不可持续（吃老本）。" },
   debtRatio: { formula: "总负债 ÷ 总资产 × 100%", meaning: "公司资产有多少是借来的。<50% 稳健，50-70% 正常，>70% 高杠杆需警惕。银行股除外。" },
+  fcfToNetProfit: { formula: "经营性现金流净额 ÷ 净利润", meaning: "利润有没有真金白银支撑。>1 说明赚的是真钱（盈利质量好），0.5-1 正常，<0.5 警惕应收账款/存货积压。" },
+  roic: { formula: "税后营业利润 ÷ 投入资本 × 100%", meaning: "公司每投入一元资本能赚多少钱。比 ROE 更能衡量管理层能力（去杠杆影响）。>20% 优质，10-20% 良好，<5% 不佳。" },
+  grossMargin: { formula: "(营业收入 - 营业成本) ÷ 营业收入 × 100%", meaning: "每卖一元钱能赚多少毛利。高且稳定=护城河深。逐年下滑是危险信号。" },
   fearIndex: { formula: "涨跌幅×35% + 振幅×35% + 换手率×30%", meaning: "综合恐慌指数 0-100。>60 恐慌（或抄底机会），<40 贪婪（或追高风险）。" },
   safetyScore: { formula: "(格雷厄姆估值 - 现价) ÷ 估值 × 100%", meaning: "安全边际 0-100。>60 被低估，40-60 合理偏低，<20 高估/危险。基于格雷厄姆公式。" },
 };
@@ -112,6 +115,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           <div style={{ fontSize: 11, lineHeight: 1.8 }}>
             <div>股息率 25% + ROE 20% + 安全边际 25%</div>
             <div>PE 20% + 负债率 10%（越低越好）</div>
+            <div style={{ marginTop: 4, color: "#a1a1aa" }}>← 旧版权重（新版含 FCF/ROIC/毛利率）</div>
           </div>
         } color="#27272a">
           <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help" }}>
@@ -134,11 +138,10 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         return (
           <Tooltip title={
             <div style={{ fontSize: 11, lineHeight: 1.8 }}>
-              <div>股息率 {s.breakdown.dividendYield}分</div>
-              <div>ROE {s.breakdown.roe}分</div>
-              <div>安全边际 {s.breakdown.safety}分</div>
-              <div>PE {s.breakdown.pe}分</div>
-              <div>负债率 {s.breakdown.debtRatio}分</div>
+              <div>股息率 {s.breakdown.dividendYield}分 · ROE {s.breakdown.roe}分</div>
+              <div>安全 {s.breakdown.safety}分 · PE {s.breakdown.pe}分</div>
+              <div>负债率 {s.breakdown.debtRatio}分 · FCF/净利 {s.breakdown.fcfToNetProfit}分</div>
+              <div>ROIC {s.breakdown.roic}分 · 毛利率 {s.breakdown.grossMargin}分</div>
             </div>
           } color="#27272a">
             <Flex align="center" gap={4} style={{ cursor: "help" }}>
@@ -238,6 +241,53 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       sorter: (a, b) => (a.fundamentals.roe ?? -999) - (b.fundamentals.roe ?? -999),
       width: 110,
       render: (_, r) => <ROEBadge roe={r.fundamentals.roe} />,
+    },
+    {
+      title: <ColLabel field="fcfToNetProfit" label="FCF/净利" />,
+      key: "fcfToNetProfit",
+      sorter: (a, b) => (a.fundamentals.fcfToNetProfit ?? -999) - (b.fundamentals.fcfToNetProfit ?? -999),
+      width: 85,
+      render: (_, r) => {
+        const v = r.fundamentals.fcfToNetProfit;
+        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
+        const col = v >= 1.2 ? "var(--green)" : v >= 0.7 ? "var(--gold)" : "var(--red)";
+        const icon = v >= 1.2 ? "🟢" : v >= 0.7 ? "🟡" : "🔴";
+        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v >= 1.2 ? 700 : 400 }}>{icon} {fmt(v, 2)}</span>;
+      },
+    },
+    {
+      title: <ColLabel field="roic" label="ROIC" />,
+      key: "roic",
+      sorter: (a, b) => (a.fundamentals.roic ?? -999) - (b.fundamentals.roic ?? -999),
+      width: 85,
+      render: (_, r) => {
+        const v = r.fundamentals.roic;
+        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
+        const col = v >= 20 ? "var(--green)" : v >= 10 ? "var(--blue)" : v >= 5 ? "var(--gold)" : "var(--red)";
+        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v >= 20 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
+      },
+    },
+    {
+      title: <ColLabel field="grossMargin" label="毛利率" />,
+      key: "grossMargin",
+      sorter: (a, b) => (a.fundamentals.grossMargin ?? -999) - (b.fundamentals.grossMargin ?? -999),
+      width: 100,
+      render: (_, r) => {
+        const v = r.fundamentals.grossMargin;
+        const trend = r.fundamentals.grossMarginTrend;
+        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
+        const col = v >= 60 ? "var(--green)" : v >= 30 ? "var(--blue)" : v >= 15 ? "var(--gold)" : "var(--red)";
+        const trendIcon = trend === 1 ? " ↑" : trend === -1 ? " ↓" : "";
+        const trendCol = trend === 1 ? "var(--green)" : trend === -1 ? "var(--red)" : undefined;
+        return (
+          <span style={{ fontFamily: "monospace", color: col }}>
+            {fmt(v, 1)}%
+            {trend !== 0 && trend !== null && (
+              <span style={{ color: trendCol, fontSize: 10, marginLeft: 2 }}>{trendIcon}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       title: <ColLabel field="dividendPayoutRatio" label="支付率" />,

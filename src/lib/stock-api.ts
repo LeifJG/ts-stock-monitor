@@ -12,6 +12,7 @@ import * as path from "path";
 
 const DIVIDEND_CACHE_FILE = path.join(process.cwd(), "data", "dividend_yields.json");
 const FEAR_TECH_CACHE_FILE = path.join(process.cwd(), "data", "fear_tech_cache.json");
+const FINANCIALS_CACHE_FILE = path.join(process.cwd(), "data", "financials_cache.json");
 
 /**
  * 读取统一股息率缓存（cninfo 真实数据，由 dividend_data.py 维护）
@@ -79,6 +80,42 @@ function readFearTechCache(): Record<string, FearTechEntry> | null {
     }
     _fearTechCache = result;
     _fearCacheMtime = stat.mtimeMs;
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ── 深度财务指标缓存（由 financials_data.py 维护） ─────────────
+interface FinancialsEntry {
+  grossMargin?: number | null;
+  grossMarginTrend?: number | null;
+  ocfToNetProfit?: number | null;
+}
+
+let _financialsCache: Record<string, FinancialsEntry> | null = null;
+let _finCacheMtime = 0;
+
+function readFinancialsCache(): Record<string, FinancialsEntry> | null {
+  try {
+    const stat = fs.statSync(FINANCIALS_CACHE_FILE);
+    if (stat.mtimeMs === _finCacheMtime && _financialsCache) {
+      return _financialsCache;
+    }
+    const raw = fs.readFileSync(FINANCIALS_CACHE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const result: Record<string, FinancialsEntry> = {};
+    for (const [code, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === "object") {
+        const e = entry as any;
+        result[code] = {};
+        if (e.grossMargin != null) result[code].grossMargin = e.grossMargin;
+        if (e.grossMarginTrend != null) result[code].grossMarginTrend = e.grossMarginTrend;
+        if (e.ocfToNetProfit != null) result[code].ocfToNetProfit = e.ocfToNetProfit;
+      }
+    }
+    _financialsCache = result;
+    _finCacheMtime = stat.mtimeMs;
     return result;
   } catch {
     return null;
@@ -313,6 +350,7 @@ export async function fetchIndexData(): Promise<IndexData[]> {
 interface EastMoneyFinData {
   dividendYield: number | null;  // 股息率(%)
   debtRatio: number | null;      // 资产负债率(%)
+  roic: number | null;           // 投入资本回报率(%)
 }
 
 /**
@@ -336,7 +374,7 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
 
       // f162=股息率, f167=资产负债率, f168=ROE
       const res = await (fetch as any)(
-        `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f162,f167`,
+        `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f58,f162,f167`,
         { signal: controller.signal }
       );
       clearTimeout(timeout);
@@ -345,8 +383,16 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
       const json = await res.json();
       if (!json?.data) return;
 
+      const raw58 = json.data.f58 as number | undefined;  // ROIC
       const raw162 = json.data.f162 as number | undefined;
       const raw167 = json.data.f167 as number | undefined;
+
+      let roic: number | null = null;
+      if (raw58 != null && raw58 > 0) {
+        // f58 是千分比 → 转百分比
+        roic = Math.round(raw58 / 10) / 10;
+        if (roic > 100) roic = null;
+      }
 
       // f162: 每股股息(TTM) → 转成股息率(%)
       // 有些版本 f162 是股息率(千分比), 需校验
@@ -366,7 +412,7 @@ async function fetchFinancialsFromEastMoney(codes: StockCode[]): Promise<Map<str
         if (debtRatio > 100) debtRatio = null;
       }
 
-      result.set(code, { dividendYield: divYield, debtRatio });
+      result.set(code, { dividendYield: divYield, debtRatio, roic });
     } catch {
       // 静默失败
     }
@@ -493,6 +539,16 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       // 仅在东财数据可用时展示，不做估算（银行股负债率高是行业常态）
       let debtRatio = em?.debtRatio ?? null;
 
+      // ── ROIC（投入资本回报率） ──────────────────────────────
+      const roic = em?.roic ?? null;
+
+      // ── 深度财务指标（来自 financials_cache.json） ─────────
+      const finCache = readFinancialsCache();
+      const finEntry = finCache?.[d.code];
+      const fcfToNetProfit = finEntry?.ocfToNetProfit ?? null;
+      const grossMargin = finEntry?.grossMargin ?? null;
+      const grossMarginTrend = finEntry?.grossMarginTrend ?? null;
+
       const fundamentals: StockFundamentals = {
         pe: d.pe,
         pb: d.pb,
@@ -504,6 +560,10 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         roe,
         dividendPayoutRatio,
         debtRatio,
+        fcfToNetProfit,
+        roic,
+        grossMargin,
+        grossMarginTrend,
       };
 
       const safetyScore = calcSafetyScore(

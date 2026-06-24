@@ -7,11 +7,14 @@ import type { StockData } from "./types";
 
 // ─── 评分权重 ───────────────────────────────────────────────
 const WEIGHTS = {
-  dividendYield: 0.25,  // 股息率
-  roe: 0.20,            // ROE
-  safety: 0.25,         // 安全边际
-  debtRatio: 0.10,      // 负债率（越低越好）
-  pe: 0.20,             // PE（越低越好）
+  dividendYield: 0.20,   // 股息率（略降，但仍重要）
+  roe: 0.15,             // ROE（部分让给 ROIC）
+  safety: 0.20,          // 安全边际
+  debtRatio: 0.05,       // 负债率（降，已有 ROIC 覆盖风险维度）
+  pe: 0.15,              // PE（降）
+  fcfToNetProfit: 0.10,  // 盈利质量（新增）
+  roic: 0.10,            // 投入资本回报率（新增）
+  grossMargin: 0.05,     // 毛利率（新增）
 };
 
 // ─── 单项评分函数（每个 0-100） ────────────────────────────
@@ -20,9 +23,9 @@ const WEIGHTS = {
 function scoreDividendYield(v: number | null): number {
   if (v == null || v <= 0) return 0;
   if (v >= 8) return 100;
-  if (v >= 5) return 60 + ((v - 5) / 3) * 40; // 5%→60, 8%→100
-  if (v >= 3) return 30 + ((v - 3) / 2) * 30; // 3%→30, 5%→60
-  if (v >= 1) return ((v - 1) / 2) * 30;       // 1%→0, 3%→30
+  if (v >= 5) return 60 + ((v - 5) / 3) * 40;
+  if (v >= 3) return 30 + ((v - 3) / 2) * 30;
+  if (v >= 1) return ((v - 1) / 2) * 30;
   return 0;
 }
 
@@ -30,9 +33,9 @@ function scoreDividendYield(v: number | null): number {
 function scoreROE(v: number | null): number {
   if (v == null || v <= 0) return 0;
   if (v >= 25) return 100;
-  if (v >= 15) return 50 + ((v - 15) / 10) * 50; // 15%→50, 25%→100
-  if (v >= 10) return 25 + ((v - 10) / 5) * 25;  // 10%→25, 15%→50
-  if (v >= 5) return ((v - 5) / 5) * 25;          // 5%→0, 10%→25
+  if (v >= 15) return 50 + ((v - 15) / 10) * 50;
+  if (v >= 10) return 25 + ((v - 10) / 5) * 25;
+  if (v >= 5) return ((v - 5) / 5) * 25;
   return 0;
 }
 
@@ -44,34 +47,67 @@ function scoreSafety(safetyScore: number | null | undefined): number {
 
 /** 负债率评分：越低越好，<30% 满分，>70% 零分 */
 function scoreDebtRatio(v: number | null): number {
-  if (v == null) return 50; // 未知取中值
+  if (v == null) return 50;
   if (v <= 30) return 100;
-  if (v <= 50) return 70 + ((50 - v) / 20) * 30; // 30%→100, 50%→70
-  if (v <= 70) return 30 + ((70 - v) / 20) * 40; // 50%→70, 70%→30
-  return Math.max(0, 30 - ((v - 70) / 30) * 30);  // 70%→30, 100%→0
+  if (v <= 50) return 70 + ((50 - v) / 20) * 30;
+  if (v <= 70) return 30 + ((70 - v) / 20) * 40;
+  return Math.max(0, 30 - ((v - 70) / 30) * 30);
 }
 
 /** PE 评分：越低越好，<10 满分，>40 零分，亏损股零分 */
 function scorePE(v: number | null): number {
   if (v == null || v <= 0) return 0;
   if (v <= 10) return 100;
-  if (v <= 15) return 75 + ((15 - v) / 5) * 25;  // 10→100, 15→75
-  if (v <= 25) return 45 + ((25 - v) / 10) * 30; // 15→75, 25→45
-  if (v <= 40) return 15 + ((40 - v) / 15) * 30; // 25→45, 40→15
-  return Math.max(0, 15 - ((v - 40) / 40) * 15);  // 40→15, 80→0
+  if (v <= 15) return 75 + ((15 - v) / 5) * 25;
+  if (v <= 25) return 45 + ((25 - v) / 10) * 30;
+  if (v <= 40) return 15 + ((40 - v) / 15) * 30;
+  return Math.max(0, 15 - ((v - 40) / 40) * 15);
+}
+
+/** FCF/净利润比评分：>1.5 满分，>0.7 及格 */
+function scoreFcfToNetProfit(v: number | null): number {
+  if (v == null || v <= 0) return 0;
+  if (v >= 1.5) return 100;
+  if (v >= 1.2) return 70 + ((v - 1.2) / 0.3) * 30;  // 1.2→70, 1.5→100
+  if (v >= 0.7) return 30 + ((v - 0.7) / 0.5) * 40;   // 0.7→30, 1.2→70
+  if (v >= 0.3) return ((v - 0.3) / 0.4) * 30;         // 0.3→0, 0.7→30
+  return 0;
+}
+
+/** ROIC 评分：>25% 满分，>10% 及格 */
+function scoreROIC(v: number | null): number {
+  if (v == null || v <= 0) return 0;
+  if (v >= 25) return 100;
+  if (v >= 15) return 60 + ((v - 15) / 10) * 40;  // 15%→60, 25%→100
+  if (v >= 10) return 30 + ((v - 10) / 5) * 30;    // 10%→30, 15%→60
+  if (v >= 5) return ((v - 5) / 5) * 30;            // 5%→0, 10%→30
+  return 0;
+}
+
+/** 毛利率评分：>70% 满分，>30% 及格，<10% 零分 */
+function scoreGrossMargin(v: number | null): number {
+  if (v == null || v <= 0) return 0;
+  if (v >= 70) return 100;
+  if (v >= 40) return 50 + ((v - 40) / 30) * 50;   // 40%→50, 70%→100
+  if (v >= 20) return 20 + ((v - 20) / 20) * 30;   // 20%→20, 40%→50
+  if (v >= 10) return ((v - 10) / 10) * 20;         // 10%→0, 20%→20
+  return 0;
 }
 
 // ─── 综合评分 ───────────────────────────────────────────────
 
 export interface ScoreResult {
-  total: number;           // 综合评分 0-100
-  grade: ScoreGrade;       // 等级
+  total: number;
+  grade: ScoreGrade;
   breakdown: {
-    dividendYield: number; // 各单项分
+    dividendYield: number;
     roe: number;
     safety: number;
     debtRatio: number;
     pe: number;
+    fcfToNetProfit: number;
+    roic: number;
+    grossMargin: number;
   };
 }
 
@@ -93,13 +129,19 @@ export function computeScore(stock: StockData): ScoreResult {
   const ss = scoreSafety(safetyScore?.score);
   const drs = scoreDebtRatio(fundamentals.debtRatio);
   const ps = scorePE(fundamentals.pe);
+  const fs = scoreFcfToNetProfit(fundamentals.fcfToNetProfit);
+  const ris = scoreROIC(fundamentals.roic);
+  const gs = scoreGrossMargin(fundamentals.grossMargin);
 
   const total = Math.round(
     ds * WEIGHTS.dividendYield +
     rs * WEIGHTS.roe +
     ss * WEIGHTS.safety +
     drs * WEIGHTS.debtRatio +
-    ps * WEIGHTS.pe
+    ps * WEIGHTS.pe +
+    fs * WEIGHTS.fcfToNetProfit +
+    ris * WEIGHTS.roic +
+    gs * WEIGHTS.grossMargin
   );
 
   return {
@@ -111,6 +153,9 @@ export function computeScore(stock: StockData): ScoreResult {
       safety: Math.round(ss),
       debtRatio: Math.round(drs),
       pe: Math.round(ps),
+      fcfToNetProfit: Math.round(fs),
+      roic: Math.round(ris),
+      grossMargin: Math.round(gs),
     },
   };
 }
@@ -136,37 +181,40 @@ export interface ScreenerFilters {
   pbMax: number | null;
   debtRatioMax: number | null;
   scoreMin: number | null;
+  // ── 新增筛选 ──
+  fcfToNetProfitMin: number | null;
+  roicMin: number | null;
+  grossMarginMin: number | null;
 }
 
 export const DEFAULT_FILTERS: ScreenerFilters = {
-  peMin: null,
-  peMax: null,
-  dividendYieldMin: null,
-  roeMin: null,
-  roeMax: null,
-  safetyScoreMin: null,
-  pbMax: null,
-  debtRatioMax: null,
-  scoreMin: null,
+  peMin: null, peMax: null, dividendYieldMin: null,
+  roeMin: null, roeMax: null, safetyScoreMin: null,
+  pbMax: null, debtRatioMax: null, scoreMin: null,
+  fcfToNetProfitMin: null, roicMin: null, grossMarginMin: null,
 };
 
 /** 预设筛选条件 */
 export const PRESETS: Record<string, { label: string; icon: string; filters: Partial<ScreenerFilters> }> = {
   value: {
     label: "价值股", icon: "💰",
-    filters: { peMin: 0, peMax: 15, dividendYieldMin: 4, roeMin: 10 },
+    filters: { peMin: 0, peMax: 15, dividendYieldMin: 4, roeMin: 10, fcfToNetProfitMin: 0.7 },
   },
   highDividend: {
     label: "高股息", icon: "🎯",
-    filters: { dividendYieldMin: 5, debtRatioMax: 60 },
+    filters: { dividendYieldMin: 5, debtRatioMax: 60, fcfToNetProfitMin: 0.7 },
+  },
+  quality: {
+    label: "盈利质量", icon: "💎",
+    filters: { fcfToNetProfitMin: 1.0, roicMin: 15, grossMarginMin: 40, debtRatioMax: 50 },
   },
   bluechip: {
     label: "白马股", icon: "🦄",
-    filters: { roeMin: 15, peMax: 25, debtRatioMax: 50, dividendYieldMin: 2 },
+    filters: { roeMin: 15, roicMin: 15, peMax: 25, debtRatioMax: 50, dividendYieldMin: 2, fcfToNetProfitMin: 0.7 },
   },
   safe: {
     label: "低风险", icon: "🛡️",
-    filters: { debtRatioMax: 40, safetyScoreMin: 40, peMax: 20 },
+    filters: { debtRatioMax: 40, safetyScoreMin: 40, peMax: 20, fcfToNetProfitMin: 0.5 },
   },
 };
 
@@ -193,6 +241,9 @@ export function applyFilters(
     if (filters.pbMax != null && (fundamentals.pb == null || fundamentals.pb > filters.pbMax)) pass = false;
     if (filters.debtRatioMax != null && (fundamentals.debtRatio == null || fundamentals.debtRatio > filters.debtRatioMax)) pass = false;
     if (filters.scoreMin != null && (score == null || score.total < filters.scoreMin)) pass = false;
+    if (filters.fcfToNetProfitMin != null && (fundamentals.fcfToNetProfit == null || fundamentals.fcfToNetProfit < filters.fcfToNetProfitMin)) pass = false;
+    if (filters.roicMin != null && (fundamentals.roic == null || fundamentals.roic < filters.roicMin)) pass = false;
+    if (filters.grossMarginMin != null && (fundamentals.grossMargin == null || fundamentals.grossMargin < filters.grossMarginMin)) pass = false;
 
     if (pass) matched.add(code);
   }

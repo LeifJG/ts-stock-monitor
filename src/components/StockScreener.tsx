@@ -169,6 +169,27 @@ export default function StockScreener({ filters, onChange, activeCount, totalCou
               placeholder="不限"
               step={5}
             />
+            <FilterField
+              label="FCF/净利润 ≥"
+              value={filters.fcfToNetProfitMin ?? null}
+              onChange={(v) => setFilter("fcfToNetProfitMin", v)}
+              placeholder="不限"
+              step={0.1}
+            />
+            <FilterField
+              label="ROIC ≥ ( % )"
+              value={filters.roicMin ?? null}
+              onChange={(v) => setFilter("roicMin", v)}
+              placeholder="不限"
+              step={1}
+            />
+            <FilterField
+              label="毛利率 ≥ ( % )"
+              value={filters.grossMarginMin ?? null}
+              onChange={(v) => setFilter("grossMarginMin", v)}
+              placeholder="不限"
+              step={5}
+            />
           </div>
         </div>
       )}

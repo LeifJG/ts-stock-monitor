@@ -76,6 +76,9 @@ export const FIELD_LABELS: Record<string, string> = {
   roe: "ROE",
   dividendPayoutRatio: "股息支付率",
   debtRatio: "资产负债率",
+  fcfToNetProfit: "FCF/净利润比",
+  roic: "ROIC",
+  grossMargin: "毛利率",
 };
 
 /** 告警字段单位 */
@@ -92,6 +95,9 @@ export const FIELD_UNITS: Record<string, string> = {
   roe: "%",
   dividendPayoutRatio: "%",
   debtRatio: "%",
+  fcfToNetProfit: "",
+  roic: "%",
+  grossMargin: "%",
 };
 
 /** 排序字段 → 中文标签 */

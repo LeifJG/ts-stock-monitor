@@ -42,7 +42,14 @@ function getFieldValue(data: StockData, field: AlertField): number | null {
       return data.fundamentals.dividendPayoutRatio;
     case "debtRatio":
       return data.fundamentals.debtRatio;
+    case "fcfToNetProfit":
+      return data.fundamentals.fcfToNetProfit;
+    case "roic":
+      return data.fundamentals.roic;
+    case "grossMargin":
+      return data.fundamentals.grossMargin;
   }
+  return null;
 }
 
 // ─── 比较器 ─────────────────────────────────────────────────────

@@ -59,6 +59,11 @@ export interface StockFundamentals {
   roe: number | null;           // 净资产收益率 (%)
   dividendPayoutRatio: number | null; // 股息支付率 (%) = 每股股息 ÷ EPS
   debtRatio: number | null;     // 资产负债率 (%)
+  // ── 盈利能力深度指标（长期投资者关注） ──
+  fcfToNetProfit: number | null;  // 经营现金流净额/净利润比 → >1=盈利质量好
+  roic: number | null;            // 投入资本回报率 (%) → 衡量管理层能力
+  grossMargin: number | null;     // 毛利率 (%) → 护城河指标
+  grossMarginTrend: number | null; // 毛利率趋势: -1=下滑, 0=稳定, 1=上升
 }
 /** 高管增减持记录 */
 export interface InsiderTrade {
@@ -183,7 +188,11 @@ export type SortField =
   | "safetyScore"
   | "roe"
   | "dividendPayoutRatio"
-  | "debtRatio";
+  | "debtRatio"
+  | "fcfToNetProfit"
+  | "roic"
+  | "grossMargin"
+  | "grossMarginTrend";
 
 export type SortOrder = "asc" | "desc";
 
@@ -213,7 +222,10 @@ export type AlertField =
   | "volume"
   | "roe"
   | "dividendPayoutRatio"
-  | "debtRatio";
+  | "debtRatio"
+  | "fcfToNetProfit"
+  | "roic"
+  | "grossMargin";
 
 /** 告警规则 */
 export interface AlertRule {
