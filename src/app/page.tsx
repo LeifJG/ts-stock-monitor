@@ -31,6 +31,9 @@ import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
 import StockScreener from "@/components/StockScreener";
+import dynamic from "next/dynamic";
+
+const TradingNotes = dynamic(() => import("@/components/TradingNotes"), { ssr: false });
 import { computeAllScores, applyFilters, type ScreenerFilters } from "@/lib/scorer";
 import { DEFAULT_FILTERS } from "@/lib/scorer";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
@@ -48,6 +51,7 @@ export default function Home() {
   const [showIndustry, setShowIndustry] = useLocalStorage("ts-stock-monitor:showIndustry", false);
   const [showGrid, setShowGrid] = useLocalStorage("ts-stock-monitor:showGrid", false);
   const [showReport, setShowReport] = useLocalStorage("ts-stock-monitor:showReport", false);
+  const [showNotes, setShowNotes] = useState(false);
   const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
   const [showScore, setShowScore] = useState(false);
 
@@ -149,6 +153,8 @@ export default function Home() {
         onGridToggle={() => setShowGrid(!showGrid)}
         showReport={showReport}
         onReportToggle={() => setShowReport(true)}
+        showNotes={showNotes}
+        onNotesToggle={() => setShowNotes(!showNotes)}
         triggerCount={triggers.length}
       />
 
@@ -197,6 +203,13 @@ export default function Home() {
 
       {/* ═══ 收盘日报（弹窗）═══ */}
       <DailyReport open={showReport} onClose={() => setShowReport(false)} />
+
+      {/* ═══ 交易笔记 ═══ */}
+      {showNotes && (
+        <section style={{ marginBottom: 16 }}>
+          <TradingNotes />
+        </section>
+      )}
 
       {/* ═══ 预警面板 ═══ */}
       {showAlertPanel && (

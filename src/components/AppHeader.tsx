@@ -23,6 +23,7 @@ import {
   SunOutlined,
   MoonOutlined,
   DatabaseOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import { useTheme } from "@/lib/ThemeContext";
 import DataManager from "./DataManager";
@@ -45,6 +46,8 @@ interface AppHeaderProps {
   onGridToggle: () => void;
   showReport: boolean;
   onReportToggle: () => void;
+  showNotes: boolean;
+  onNotesToggle: () => void;
   triggerCount: number;
 }
 
@@ -65,6 +68,8 @@ export default function AppHeader({
   onGridToggle,
   showReport,
   onReportToggle,
+  showNotes,
+  onNotesToggle,
   triggerCount,
 }: AppHeaderProps) {
   const { isDark, toggleTheme } = useTheme();
@@ -136,6 +141,13 @@ export default function AppHeader({
 
   // ── 工具菜单 ──────────────────────────────────────────────
   const toolsMenu: MenuProps["items"] = [
+    {
+      key: "notes",
+      label: "交易笔记",
+      icon: <EditOutlined />,
+      onClick: onNotesToggle,
+    },
+    { type: "divider" },
     {
       key: "calculator",
       label: "分红计算器",
@@ -217,7 +229,7 @@ export default function AppHeader({
 
         {/* 工具 */}
         <Dropdown menu={{ items: toolsMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small" type={showCalculator || showCalendar || showReport ? "primary" : "default"}>
+          <Button size="small" type={showNotes || showCalculator || showCalendar || showReport ? "primary" : "default"}>
             <CalculatorOutlined /> 工具 <DownOutlined style={{ fontSize: 10 }} />
           </Button>
         </Dropdown>
