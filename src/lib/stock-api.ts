@@ -91,6 +91,8 @@ interface FinancialsEntry {
   grossMargin?: number | null;
   grossMarginTrend?: number | null;
   ocfToNetProfit?: number | null;
+  debtRatio?: number | null;
+  roic?: number | null;
 }
 
 let _financialsCache: Record<string, FinancialsEntry> | null = null;
@@ -112,6 +114,8 @@ function readFinancialsCache(): Record<string, FinancialsEntry> | null {
         if (e.grossMargin != null) result[code].grossMargin = e.grossMargin;
         if (e.grossMarginTrend != null) result[code].grossMarginTrend = e.grossMarginTrend;
         if (e.ocfToNetProfit != null) result[code].ocfToNetProfit = e.ocfToNetProfit;
+        if (e.debtRatio != null) result[code].debtRatio = e.debtRatio;
+        if (e.roic != null) result[code].roic = e.roic;
       }
     }
     _financialsCache = result;
@@ -429,11 +433,11 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
   const emFinPromise = fetchFinancialsFromEastMoney(codes);
   const tencentData = await fetchFromTencent(codes);
 
-  // 东财最多等 200ms，超时则用估算值
+  // 东财最多等 300ms（主要靠缓存，东财仅作备选）
   const emFin = await Promise.race([
     emFinPromise,
     new Promise<Map<string, EastMoneyFinData>>((r) =>
-      setTimeout(() => r(new Map()), 200)
+      setTimeout(() => r(new Map()), 300)
     ),
   ]);
 
@@ -535,16 +539,17 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
         }
       }
 
-      // ── 资产负债率 ──────────────────────────────────────────
-      // 仅在东财数据可用时展示，不做估算（银行股负债率高是行业常态）
-      let debtRatio = em?.debtRatio ?? null;
-
-      // ── ROIC（投入资本回报率） ──────────────────────────────
-      const roic = em?.roic ?? null;
-
       // ── 深度财务指标（来自 financials_cache.json） ─────────
       const finCache = readFinancialsCache();
       const finEntry = finCache?.[d.code];
+
+      // ── 资产负债率 ──────────────────────────────────────────
+      // 优先从缓存读取，缓存无数据时回退到东财 API
+      const debtRatio = finEntry?.debtRatio ?? em?.debtRatio ?? null;
+
+      // ── ROIC（投入资本回报率） ──────────────────────────────
+      const roic = finEntry?.roic ?? em?.roic ?? null;
+
       const fcfToNetProfit = finEntry?.ocfToNetProfit ?? null;
       const grossMargin = finEntry?.grossMargin ?? null;
       const grossMarginTrend = finEntry?.grossMarginTrend ?? null;

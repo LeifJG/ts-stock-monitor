@@ -31,7 +31,9 @@ import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
 import StockScreener from "@/components/StockScreener";
-import TradingNotes from "@/components/TradingNotes";
+import { lazy, Suspense } from "react";
+
+const TradingNotes = lazy(() => import("@/components/TradingNotes"));
 import { computeAllScores, applyFilters, type ScreenerFilters } from "@/lib/scorer";
 import { DEFAULT_FILTERS } from "@/lib/scorer";
 import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
@@ -132,7 +134,7 @@ export default function Home() {
   }, [setWatchlist]);
 
   return (
-    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 48px" }}>
+    <div style={{ maxWidth: 1600, margin: "0 auto", padding: "24px 24px 48px" }}>
       {/* ═══ 头部（重构：分组下拉） ═══ */}
       <AppHeader
         viewMode={viewMode}

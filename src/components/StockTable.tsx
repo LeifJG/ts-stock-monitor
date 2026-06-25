@@ -366,6 +366,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       </Flex>
 
       {/* 表格 */}
+      <div style={{ overflowX: "auto" }}>
       <Table
         dataSource={filtered}
         columns={columns}
@@ -379,6 +380,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           return hasAlert ? "ant-table-row-alert" : "";
         }}
       />
+      </div>
     </div>
   );
 }

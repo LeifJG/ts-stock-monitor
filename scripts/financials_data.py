@@ -5,6 +5,8 @@ financials_data.py — 深度财务指标数据模块
 从 akshare 获取财务分析数据，计算：
   - 毛利率（Gross Margin）及趋势
   - 经营现金流/净利润比率（OCF/Net Profit）
+  - 资产负债率（Debt Ratio）
+  - 投入资本回报率（ROIC）
 缓存到 data/financials_cache.json，供 stock-api.ts 读取
 """
 
@@ -36,9 +38,11 @@ def fetch_all(codes: list[str]) -> dict:
             gm_col = next((c for c in df.columns if "销售毛利" in c), None)
             cr_col = next((c for c in df.columns if "主营业务成本" in c), None)
             cf_col = next((c for c in df.columns if "经营现金净流量与净利润" in c), None)
+            dr_col = next((c for c in df.columns if "资产负债率" in c), None)
 
             gross_margins = []
             ocf_to_np_list = []
+            debt_ratios = []
 
             for _, row in annual.iterrows():
                 # 毛利率
@@ -54,6 +58,11 @@ def fetch_all(codes: list[str]) -> dict:
                 cf = row.get(cf_col) if cf_col else None
                 if cf is not None and str(cf) not in ("nan", "None", ""):
                     ocf_to_np_list.append(round(float(cf), 2))
+
+                # 资产负债率
+                dr = row.get(dr_col) if dr_col else None
+                if dr is not None and str(dr) not in ("nan", "None", ""):
+                    debt_ratios.append(round(float(dr), 1))
 
             # 毛利率趋势
             trend = 0
@@ -71,12 +80,35 @@ def fetch_all(codes: list[str]) -> dict:
                 entry["grossMarginTrend"] = trend
             if ocf_to_np_list:
                 entry["ocfToNetProfit"] = ocf_to_np_list[-1]
+            if debt_ratios:
+                entry["debtRatio"] = debt_ratios[-1]
 
             if entry:
                 result[code] = entry
 
         except Exception as e:
             print(f"[warn] {code}: {e}", file=sys.stderr)
+
+        # ROIC 需要从 stock_financial_abstract 单独获取（有投入资本回报率列）
+        try:
+            df2 = ak.stock_financial_abstract(symbol=code)
+            # df2 格式: 指标为行，日期为列
+            for _, row in df2.iterrows():
+                indicator = str(row["指标"]).strip()
+                if "投入资本回报率" in indicator:
+                    # 找最新有值的年报（列名如 20241231 或 2024-12-31）
+                    for col in reversed(df2.columns):
+                        col_str = str(col)
+                        if "1231" in col_str or "12-31" in col_str:
+                            val = row.get(col)
+                            if val is not None and str(val) not in ("nan", "None", ""):
+                                if code not in result:
+                                    result[code] = {}
+                                result[code]["roic"] = round(float(val), 1)
+                                break
+                    break
+        except Exception as e:
+            print(f"[warn] {code} ROIC: {e}", file=sys.stderr)
 
     return result
 
