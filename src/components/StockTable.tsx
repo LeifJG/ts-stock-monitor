@@ -15,6 +15,7 @@ import DividendBadge from "./DividendBadge";
 import { PEBadge, DividendYieldBadge, ROEBadge, SafetyBadge } from "./MetricBadges";
 import { fmt } from "@/lib/format";
 import type { ScoreResult } from "@/lib/scorer";
+import ShareholderTrend from "./ShareholderTrend";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -82,6 +83,7 @@ interface StockTableProps {
 
 export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory, scores, showScore, onToggleScore }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
 
   const triggeredCodes = useMemo(() => new Set(triggers.map((t) => t.stockCode)), [triggers]);
 
@@ -375,6 +377,14 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         size="small"
         pagination={false}
         style={{ fontSize: 12 }}
+        expandable={{
+          expandedRowRender: (record) => (
+            <ShareholderTrend code={record.quote.code} visible />
+          ),
+          rowExpandable: () => true,
+          expandedRowKeys: expandedCode ? [expandedCode] : [],
+          onExpand: (expanded, record) => setExpandedCode(expanded ? record.quote.code : null),
+        }}
         rowClassName={(record) => {
           const hasAlert = triggeredCodes.has(record.quote.code);
           return hasAlert ? "ant-table-row-alert" : "";
