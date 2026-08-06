@@ -3,8 +3,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
-import * as path from "path";
+import { runPythonScript } from "@/lib/python-runner";
 
 // 内存缓存（12 小时）
 interface CacheEntry {
@@ -15,23 +14,8 @@ let cache: Record<string, CacheEntry> = {};
 const CACHE_TTL = 12 * 60 * 60 * 1000;
 
 function fetchCalendarFromPython(codes: string[]): any {
-  const scriptPath = path.join(process.cwd(), "scripts", "fetch_dividend_calendar.py");
   const codesStr = codes.join(",");
-
-  const env = {
-    ...process.env,
-    http_proxy: process.env.http_proxy || "http://192.168.124.11:7890",
-    https_proxy: process.env.https_proxy || "http://192.168.124.11:7890",
-    HTTP_PROXY: process.env.http_proxy || "http://192.168.124.11:7890",
-    HTTPS_PROXY: process.env.https_proxy || "http://192.168.124.11:7890",
-  };
-
-  const output = execSync(`python3 "${scriptPath}" "${codesStr}"`, {
-    encoding: "utf-8",
-    timeout: 120000,  // 日历数据量大，给 120s
-    env,
-  });
-
+  const output = runPythonScript("fetch_dividend_calendar.py", [codesStr], { timeout: 120000 });
   return JSON.parse(output);
 }
 

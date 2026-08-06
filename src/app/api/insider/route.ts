@@ -3,8 +3,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
-import * as path from "path";
+import { runPythonScript } from "@/lib/python-runner";
 
 // ─── 内存缓存（5 分钟过期） ──────────────────────────────────
 
@@ -19,21 +18,8 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
  * 调用 Python 脚本获取高管增减持数据
  */
 function fetchInsiderFromPython(codes: string[]): any {
-  const scriptPath = path.join(process.cwd(), "scripts", "fetch_insider.py");
   const codesStr = codes.join(",");
-
-  const env = {
-    ...process.env,
-    http_proxy: process.env.http_proxy || "http://192.168.124.11:7890",
-    https_proxy: process.env.https_proxy || "http://192.168.124.11:7890",
-  };
-
-  const output = execSync(`python3 "${scriptPath}" "${codesStr}"`, {
-    encoding: "utf-8",
-    timeout: 20000,
-    env,
-  });
-
+  const output = runPythonScript("fetch_insider.py", [codesStr], { timeout: 20000 });
   return JSON.parse(output);
 }
 
