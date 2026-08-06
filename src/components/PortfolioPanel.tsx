@@ -15,7 +15,10 @@ import {
   GiftOutlined, WalletOutlined, PieChartOutlined,
 } from "@ant-design/icons";
 import DonutChart from "./DonutChart";
+import TradeAdviceCard from "./TradeAdvice";
 import type { Position, PositionMetrics, StockData } from "@/lib/types";
+import type { ValuationData } from "@/app/api/valuation/route";
+import { computeTradeAdvice, type TradeAdvice } from "@/lib/trade-advice";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { usePortfolioSync } from "@/hooks/usePortfolioSync";
 
@@ -49,6 +52,37 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
   // ── 添加持仓弹窗 ──────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
+  // 交易建议（输入代码后动态查询）
+  const [advice, setAdvice] = useState<TradeAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [adviceCode, setAdviceCode] = useState<string>("");
+
+  // 监听股票代码输入 → 查询行情+估值 → 生成建议
+  const adviceTimer = useMemo(() => ({ current: null as ReturnType<typeof setTimeout> | null }), []);
+  const handleCodeChange = (value: string) => {
+    const code = (value ?? "").replace(/\D/g, "").slice(0, 6);
+    if (adviceTimer.current) clearTimeout(adviceTimer.current);
+    if (code.length !== 6) {
+      setAdvice(null);
+      setAdviceCode("");
+      return;
+    }
+    adviceTimer.current = setTimeout(() => {
+      setAdviceLoading(true);
+      setAdviceCode(code);
+      Promise.all([
+        fetch(`/api/stocks?codes=${code}`).then((r) => r.json()),
+        fetch(`/api/valuation?codes=${code}`).then((r) => r.json()),
+      ])
+        .then(([stockJson, valJson]) => {
+          const stock = stockJson?.success ? stockJson.data?.[0] : undefined;
+          const valuation: ValuationData | undefined = valJson?.success ? valJson.data?.[0] : undefined;
+          setAdvice(computeTradeAdvice(stock, valuation));
+        })
+        .catch(() => setAdvice(null))
+        .finally(() => setAdviceLoading(false));
+    }, 400);
+  };
 
   const handleAdd = () => {
     addForm.validateFields().then((values) => {
@@ -63,6 +97,8 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         buyDate: values.buyDate || new Date().toISOString().slice(0, 10),
       });
       addForm.resetFields();
+      setAdvice(null);
+      setAdviceCode("");
       setAddOpen(false);
     }).catch(() => {});
   };
@@ -370,19 +406,27 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       <Modal
         title="添加持仓"
         open={addOpen}
-        onCancel={() => setAddOpen(false)}
+        onCancel={() => { setAddOpen(false); setAdvice(null); setAdviceCode(""); }}
         onOk={handleAdd}
         okText="添加"
         cancelText="取消"
-        width={400}
+        width={460}
       >
         <Form form={addForm} layout="vertical" size="small">
           <Form.Item name="stockCode" label="股票代码" rules={[{ required: true, message: "请输入6位代码" }]}>
-            <Input placeholder="600519" maxLength={6} />
+            <Input placeholder="600519" maxLength={6} onChange={(e) => handleCodeChange(e.target.value)} />
           </Form.Item>
           <Form.Item name="stockName" label="股票名称（自动填充，可选）">
             <Input placeholder="自动从行情获取" />
           </Form.Item>
+
+          {/* ═══ 交易建议卡片 ═══ */}
+          {(adviceCode || adviceLoading) && (
+            <div style={{ marginBottom: 16 }}>
+              <TradeAdviceCard advice={advice} loading={adviceLoading} />
+            </div>
+          )}
+
           <Form.Item name="shares" label="持有股数" rules={[{ required: true, message: "请输入股数" }]}>
             <InputNumber style={{ width: "100%" }} min={1} placeholder="100" />
           </Form.Item>
