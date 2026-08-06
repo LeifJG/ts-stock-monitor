@@ -15,7 +15,10 @@ import DividendBadge from "./DividendBadge";
 import { PEBadge, DividendYieldBadge, ROEBadge, SafetyBadge } from "./MetricBadges";
 import { fmt } from "@/lib/format";
 import type { ScoreResult } from "@/lib/scorer";
+import type { ValuationData } from "@/app/api/valuation/route";
 import ShareholderTrend from "./ShareholderTrend";
+import ValuationBadge from "./ValuationBadge";
+import ValuationPanel from "./ValuationPanel";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -33,6 +36,7 @@ const COL_HELP: Record<string, { formula: string; meaning: string }> = {
   grossMargin: { formula: "(营业收入 - 营业成本) ÷ 营业收入 × 100%", meaning: "每卖一元钱能赚多少毛利。高且稳定=护城河深。逐年下滑是危险信号。" },
   fearIndex: { formula: "涨跌幅×35% + 振幅×35% + 换手率×30%", meaning: "综合恐慌指数 0-100。>60 恐慌（或抄底机会），<40 贪婪（或追高风险）。" },
   safetyScore: { formula: "(格雷厄姆估值 - 现价) ÷ 估值 × 100%", meaning: "安全边际 0-100。>60 被低估，40-60 合理偏低，<20 高估/危险。基于格雷厄姆公式。" },
+  valuation: { formula: "当前PE/PB ÷ 历史5年PE/PB区间 → 百分位", meaning: "当前估值在近5年历史中处于什么位置。<20% 低估（绿），20-50% 偏低（蓝），50-80% 偏高（金），>80% 高估（红）。分位越低越便宜。" },
 };
 
 // ─── 帮助气泡包装 ─────────────────────────────────────────────
@@ -76,12 +80,13 @@ interface StockTableProps {
   error: string | null;
   insiderTrades: Map<string, InsiderTrade[]>;
   dividendHistory: Map<string, any>;
+  valuationData?: Map<string, ValuationData>;
   scores?: Map<string, ScoreResult>;
   showScore?: boolean;
   onToggleScore?: () => void;
 }
 
-export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory, scores, showScore, onToggleScore }: StockTableProps) {
+export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory, valuationData, scores, showScore, onToggleScore }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
 
@@ -211,6 +216,15 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           </span>
         );
       },
+    },
+
+    {
+      title: <ColLabel field="valuation" label="估值分位" />,
+      key: "valuation",
+      width: 190,
+      render: (_, r) => (
+        <ValuationBadge valuation={valuationData?.get(r.quote.code)} />
+      ),
     },
 
     {
@@ -379,7 +393,14 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         style={{ fontSize: 12 }}
         expandable={{
           expandedRowRender: (record) => (
-            <ShareholderTrend code={record.quote.code} visible />
+            <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 360px", minWidth: 320, borderRight: "1px solid var(--border-color, rgba(255,255,255,0.06))", paddingRight: 24 }}>
+                <ValuationPanel code={record.quote.code} visible />
+              </div>
+              <div style={{ flex: "1 1 360px", minWidth: 320 }}>
+                <ShareholderTrend code={record.quote.code} visible />
+              </div>
+            </div>
           ),
           rowExpandable: () => true,
           expandedRowKeys: expandedCode ? [expandedCode] : [],

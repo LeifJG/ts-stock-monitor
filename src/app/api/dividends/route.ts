@@ -3,8 +3,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
-import * as path from "path";
+import { runPythonScript } from "@/lib/python-runner";
 
 // 内存缓存（30 分钟过期，历史分红数据不常变）
 interface CacheEntry {
@@ -15,23 +14,8 @@ let cache: Record<string, CacheEntry> = {};
 const CACHE_TTL = 30 * 60 * 1000;
 
 function fetchDividendsFromPython(codes: string[]): any {
-  const scriptPath = path.join(process.cwd(), "scripts", "fetch_dividend_history.py");
   const codesStr = codes.join(",");
-
-  const env = {
-    ...process.env,
-    http_proxy: process.env.http_proxy || "http://192.168.124.11:7890",
-    https_proxy: process.env.https_proxy || "http://192.168.124.11:7890",
-    HTTP_PROXY: process.env.http_proxy || "http://192.168.124.11:7890",
-    HTTPS_PROXY: process.env.https_proxy || "http://192.168.124.11:7890",
-  };
-
-  const output = execSync(`python3 "${scriptPath}" "${codesStr}"`, {
-    encoding: "utf-8",
-    timeout: 60000,  // 历史分红数据量大，给 60s
-    env,
-  });
-
+  const output = runPythonScript("fetch_dividend_history.py", [codesStr], { timeout: 60000 });
   return JSON.parse(output);
 }
 

@@ -6,23 +6,13 @@
 // 后端 Python 脚本通过 dividend_data.py 模块直接读取
 
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
+import { runPythonScript } from "@/lib/python-runner";
 import * as fs from "fs";
 import * as path from "path";
 
 export const dynamic = "force-dynamic";
 
 const CACHE_FILE = path.join(process.cwd(), "data", "dividend_yields.json");
-
-/**
- * 获取 Hermes 虚拟环境的 Python 路径
- */
-function getPythonBin(): string {
-  const home = process.env.HOME || "/home/lijg";
-  const venvPython = path.join(home, ".hermes", "hermes-agent", "venv", "bin", "python3");
-  if (fs.existsSync(venvPython)) return venvPython;
-  return "python3";
-}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -45,27 +35,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 需要请求 Python 模块获取数据
-    const pythonBin = getPythonBin();
-    const scriptPath = path.join(process.cwd(), "scripts", "dividend_data.py");
-
-    // 构建命令行
-    let cmd = `"${pythonBin}" "${scriptPath}"`;
-    if (codes.length > 0) {
-      cmd += " " + codes.join(" ");
-    }
-    if (force) {
-      cmd += " --refresh";
-    }
-
-    const env = {
-      ...process.env,
-      http_proxy: process.env.http_proxy || "http://192.168.124.11:7890",
-      https_proxy: process.env.https_proxy || "http://192.168.124.11:7890",
-      HTTP_PROXY: process.env.http_proxy || "http://192.168.124.11:7890",
-      HTTPS_PROXY: process.env.https_proxy || "http://192.168.124.11:7890",
-    };
-
-    const output = execSync(cmd, { encoding: "utf-8", timeout: 60000, env });
+    const args = [...codes];
+    if (force) args.push("--refresh");
+    const output = runPythonScript("dividend_data.py", args, { timeout: 60000 });
     const data = JSON.parse(output);
 
     return NextResponse.json({ success: true, data });
