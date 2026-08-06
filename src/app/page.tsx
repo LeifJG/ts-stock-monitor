@@ -13,6 +13,7 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useInsiderData } from "@/hooks/useInsiderData";
 import { useDividendHistory } from "@/hooks/useDividendHistory";
 import { useAlertSync } from "@/hooks/useAlertSync";
+import { useValuationData } from "@/hooks/useValuationData";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
@@ -63,6 +64,7 @@ export default function Home() {
   useAlertSync(rules);
   const { trades: insiderTrades } = useInsiderData(watchlist);
   const { data: dividendHistory } = useDividendHistory(watchlist);
+  const { data: valuationData } = useValuationData(watchlist);
 
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
@@ -279,6 +281,7 @@ export default function Home() {
           error={error}
           insiderTrades={insiderTrades}
           dividendHistory={dividendHistory}
+          valuationData={valuationData}
           scores={scores}
           showScore={showScore}
           onToggleScore={() => setShowScore(!showScore)}
