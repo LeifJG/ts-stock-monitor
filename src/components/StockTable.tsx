@@ -112,8 +112,8 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
     {
       title: "代码", dataIndex: ["quote", "code"], key: "code",
       sorter: (a, b) => parseInt(a.quote.code) - parseInt(b.quote.code),
-      width: 80,
-      render: (code: string) => <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>{code}</span>,
+      width: 64,
+      render: (code: string) => <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)", fontSize: 11 }}>{code}</span>,
     },
     // ── 综合评分列（条件显示） ──────────────────────────────
     ...(showScore && scores ? [{
@@ -126,12 +126,12 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           </div>
         } color="#27272a">
           <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help" }}>
-            ⭐ 综合评分
+            ⭐ 评分
           </span>
         </Tooltip>
       ),
       key: "compositeScore",
-      width: 90,
+      width: 70,
       sorter: (a: StockData, b: StockData) => {
         const sa = scores.get(a.quote.code)?.total ?? 0;
         const sb = scores.get(b.quote.code)?.total ?? 0;
@@ -151,29 +151,26 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
               <div>ROIC {s.breakdown.roic}分 · 毛利率 {s.breakdown.grossMargin}分</div>
             </div>
           } color="#27272a">
-            <Flex align="center" gap={4} style={{ cursor: "help" }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: 6, display: "flex",
-                alignItems: "center", justifyContent: "center",
-                background: bg, color, fontWeight: 700, fontSize: 12,
-              }}>
-                {s.total}
-              </div>
-              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{s.grade}</span>
-            </Flex>
+            <div style={{
+              width: 26, height: 26, borderRadius: 6, display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: bg, color, fontWeight: 700, fontSize: 12, cursor: "help",
+            }}>
+              {s.total}
+            </div>
           </Tooltip>
         );
       },
     }] as ColumnsType<StockData> : []),
     {
       title: "名称", dataIndex: ["quote", "name"], key: "name",
-      width: 100,
+      width: 88,
       sorter: (a, b) => a.quote.name.localeCompare(b.quote.name),
       render: (name: string, record) => {
         const hasAlert = triggeredCodes.has(record.quote.code);
         return (
-          <span style={{ fontWeight: 500, color: hasAlert ? "var(--gold)" : "var(--text-primary)" }}>
-            {hasAlert && <span style={{ marginRight: 4 }}>🔔</span>}
+          <span style={{ fontWeight: 500, color: hasAlert ? "var(--gold)" : "var(--text-primary)", fontSize: 12 }}>
+            {hasAlert && <span style={{ marginRight: 3 }}>🔔</span>}
             {name}
           </span>
         );
@@ -182,174 +179,209 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
     {
       title: "现价", dataIndex: ["quote", "currentPrice"], key: "currentPrice",
       sorter: (a, b) => a.quote.currentPrice - b.quote.currentPrice,
-      width: 80,
-      render: (v: number) => <span style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>{fmt(v, 2)}</span>,
+      width: 66,
+      render: (v: number) => <span style={{ fontFamily: "monospace", color: "var(--text-primary)", fontSize: 12 }}>{fmt(v, 2)}</span>,
     },
     {
-      title: <ColLabel field="pe" label="PE" />,
-      key: "pe",
-      sorter: (a, b) => (a.fundamentals.pe ?? 999) - (b.fundamentals.pe ?? 999),
-      width: 110,
-      render: (_, r) => <PEBadge pe={r.fundamentals.pe} />,
-    },
-    {
-      title: <ColLabel field="pb" label="PB" />,
-      key: "pb",
-      sorter: (a, b) => (a.fundamentals.pb ?? 999) - (b.fundamentals.pb ?? 999),
-      width: 100,
-      render: (_, r) => {
-        const pb = r.fundamentals.pb;
-        const col = pb != null ? (pb < 1 ? "var(--green)" : pb < 3 ? "var(--blue)" : pb < 5 ? "var(--gold)" : "var(--red)") : undefined;
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: pb != null && pb < 1 ? 700 : 400 }}>{pb?.toFixed(2) ?? "--"}</span>;
-      },
-    },
-    {
-      title: <span style={{ color: priceColor(10) }}>涨跌幅</span>,
+      title: "涨跌",
       key: "changePercent",
       sorter: (a, b) => a.quote.changePercent - b.quote.changePercent,
-      width: 85,
+      width: 68,
       render: (_, record) => {
         const pct = record.quote.changePercent;
         return (
-          <span style={{ fontFamily: "monospace", color: priceColor(pct), fontWeight: Math.abs(pct) > 5 ? 700 : 400 }}>
+          <span style={{ fontFamily: "monospace", color: priceColor(pct), fontSize: 12, fontWeight: Math.abs(pct) > 5 ? 700 : 400 }}>
             {pct > 0 ? "+" : ""}{fmt(pct, 2)}%
           </span>
         );
       },
     },
 
+    // ── 估值组 ───────────────────────────────────────────────
     {
-      title: <ColLabel field="valuation" label="估值分位" />,
-      key: "valuation",
-      width: 190,
-      render: (_, r) => (
-        <ValuationBadge valuation={valuationData?.get(r.quote.code)} />
-      ),
+      title: <span style={{ fontSize: 11, fontWeight: 600 }}>📐 估值</span>,
+      key: "group-valuation",
+      children: [
+        {
+          title: <ColLabel field="pe" label="PE" />,
+          key: "pe",
+          sorter: (a, b) => (a.fundamentals.pe ?? 999) - (b.fundamentals.pe ?? 999),
+          width: 80,
+          render: (_, r) => <PEBadge pe={r.fundamentals.pe} />,
+        },
+        {
+          title: <ColLabel field="pb" label="PB" />,
+          key: "pb",
+          sorter: (a, b) => (a.fundamentals.pb ?? 999) - (b.fundamentals.pb ?? 999),
+          width: 70,
+          render: (_, r) => {
+            const pb = r.fundamentals.pb;
+            const col = pb != null ? (pb < 1 ? "var(--green)" : pb < 3 ? "var(--blue)" : pb < 5 ? "var(--gold)" : "var(--red)") : undefined;
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: pb != null && pb < 1 ? 700 : 400 }}>{pb?.toFixed(2) ?? "--"}</span>;
+          },
+        },
+        {
+          title: <ColLabel field="valuation" label="估值分位" />,
+          key: "valuation",
+          width: 148,
+          render: (_, r) => (
+            <ValuationBadge valuation={valuationData?.get(r.quote.code)} />
+          ),
+        },
+      ],
     },
 
+    // ── 分红组 ───────────────────────────────────────────────
     {
-      title: <ColLabel field="dividendYield" label="股息率" />,
-      key: "dividendYield",
-      sorter: (a, b) => (a.fundamentals.dividendYield ?? -999) - (b.fundamentals.dividendYield ?? -999),
-      width: 110,
-      render: (_, r) => <DividendYieldBadge value={r.fundamentals.dividendYield} />,
+      title: <span style={{ fontSize: 11, fontWeight: 600 }}>💰 分红</span>,
+      key: "group-dividend",
+      children: [
+        {
+          title: <ColLabel field="dividendYield" label="股息率" />,
+          key: "dividendYield",
+          sorter: (a, b) => (a.fundamentals.dividendYield ?? -999) - (b.fundamentals.dividendYield ?? -999),
+          width: 80,
+          render: (_, r) => <DividendYieldBadge value={r.fundamentals.dividendYield} />,
+        },
+        {
+          title: "分红历史",
+          key: "dividendHistory",
+          width: 86,
+          render: (_, r) => <DividendBadge data={dividendHistory.get(r.quote.code)} />,
+        },
+        {
+          title: <ColLabel field="dividendPayoutRatio" label="支付率" />,
+          key: "dividendPayoutRatio",
+          sorter: (a, b) => (a.fundamentals.dividendPayoutRatio ?? -999) - (b.fundamentals.dividendPayoutRatio ?? -999),
+          width: 62,
+          render: (_, r) => {
+            const v = r.fundamentals.dividendPayoutRatio;
+            const col = v != null && v > 100 ? "var(--red)" : v != null && v < 30 ? "var(--gold)" : undefined;
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: v != null && v > 100 ? 700 : 400 }}>{fmt(v, 0)}%</span>;
+          },
+        },
+      ],
     },
+
+    // ── 质量组 ───────────────────────────────────────────────
     {
-      title: "分红历史",
-      key: "dividendHistory",
-      width: 110,
-      render: (_, r) => <DividendBadge data={dividendHistory.get(r.quote.code)} />,
+      title: <span style={{ fontSize: 11, fontWeight: 600 }}>💎 质量</span>,
+      key: "group-quality",
+      children: [
+        {
+          title: <ColLabel field="roe" label="ROE" />,
+          key: "roe",
+          sorter: (a, b) => (a.fundamentals.roe ?? -999) - (b.fundamentals.roe ?? -999),
+          width: 80,
+          render: (_, r) => <ROEBadge roe={r.fundamentals.roe} />,
+        },
+        {
+          title: <ColLabel field="roic" label="ROIC" />,
+          key: "roic",
+          sorter: (a, b) => (a.fundamentals.roic ?? -999) - (b.fundamentals.roic ?? -999),
+          width: 70,
+          render: (_, r) => {
+            const v = r.fundamentals.roic;
+            if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)", fontSize: 12 }}>--</span>;
+            const col = v >= 20 ? "var(--green)" : v >= 10 ? "var(--blue)" : v >= 5 ? "var(--gold)" : "var(--red)";
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: v >= 20 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
+          },
+        },
+        {
+          title: <ColLabel field="fcfToNetProfit" label="FCF/净利" />,
+          key: "fcfToNetProfit",
+          sorter: (a, b) => (a.fundamentals.fcfToNetProfit ?? -999) - (b.fundamentals.fcfToNetProfit ?? -999),
+          width: 76,
+          render: (_, r) => {
+            const v = r.fundamentals.fcfToNetProfit;
+            if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)", fontSize: 12 }}>--</span>;
+            const col = v >= 1.2 ? "var(--green)" : v >= 0.7 ? "var(--gold)" : "var(--red)";
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: v >= 1.2 ? 700 : 400 }}>{fmt(v, 2)}</span>;
+          },
+        },
+        {
+          title: <ColLabel field="grossMargin" label="毛利率" />,
+          key: "grossMargin",
+          sorter: (a, b) => (a.fundamentals.grossMargin ?? -999) - (b.fundamentals.grossMargin ?? -999),
+          width: 76,
+          render: (_, r) => {
+            const v = r.fundamentals.grossMargin;
+            const trend = r.fundamentals.grossMarginTrend;
+            if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)", fontSize: 12 }}>--</span>;
+            const col = v >= 60 ? "var(--green)" : v >= 30 ? "var(--blue)" : v >= 15 ? "var(--gold)" : "var(--red)";
+            const trendIcon = trend === 1 ? "↑" : trend === -1 ? "↓" : "";
+            const trendCol = trend === 1 ? "var(--green)" : trend === -1 ? "var(--red)" : undefined;
+            return (
+              <span style={{ fontFamily: "monospace", color: col, fontSize: 12 }}>
+                {fmt(v, 1)}%
+                {trendIcon && <span style={{ color: trendCol, fontSize: 9, marginLeft: 1 }}>{trendIcon}</span>}
+              </span>
+            );
+          },
+        },
+      ],
     },
+
+    // ── 风险组 ───────────────────────────────────────────────
     {
-      title: <ColLabel field="turnoverRate" label="换手率" />,
-      key: "turnoverRate",
-      sorter: (a, b) => (a.fundamentals.turnoverRate ?? -999) - (b.fundamentals.turnoverRate ?? -999),
-      width: 85,
-      render: (_, r) => {
-        const v = r.fundamentals.turnoverRate;
-        const col = v != null && v > 10 ? "var(--red)" : v != null && v > 5 ? "var(--gold)" : undefined;
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 10 ? 700 : 400 }}>{fmt(v, 2)}%</span>;
-      },
+      title: <span style={{ fontSize: 11, fontWeight: 600 }}>⚠️ 风险</span>,
+      key: "group-risk",
+      children: [
+        {
+          title: <ColLabel field="debtRatio" label="负债率" />,
+          key: "debtRatio",
+          sorter: (a, b) => (a.fundamentals.debtRatio ?? -999) - (b.fundamentals.debtRatio ?? -999),
+          width: 68,
+          render: (_, r) => {
+            const v = r.fundamentals.debtRatio;
+            const col = v != null && v > 70 ? "var(--red)" : v != null && v > 50 ? "var(--gold)" : undefined;
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: v != null && v > 70 ? 700 : 400 }}>{fmt(v, 0)}%</span>;
+          },
+        },
+        {
+          title: <ColLabel field="fearIndex" label="恐慌" />,
+          key: "fearIndex",
+          sorter: (a, b) => (a.fearGauge?.overall ?? -1) - (b.fearGauge?.overall ?? -1),
+          width: 52,
+          render: (_, r) => {
+            const v = r.fearGauge?.overall;
+            const col = v != null ? (v < 40 ? "var(--green)" : v < 60 ? "var(--gold)" : "var(--red)") : undefined;
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12 }}>{v ?? "--"}</span>;
+          },
+        },
+        {
+          title: <ColLabel field="safetyScore" label="安全" />,
+          key: "safetyScore",
+          sorter: (a, b) => ((a.safetyScore?.score ?? -1) - (b.safetyScore?.score ?? -1)) || ((a.safetyScore?.roeScore ?? -1) - (b.safetyScore?.roeScore ?? -1)),
+          width: 130,
+          render: (_, r) => <SafetyBadge score={r.safetyScore?.score} />,
+        },
+      ],
     },
+
+    // ── 交易组 ───────────────────────────────────────────────
     {
-      title: <ColLabel field="roe" label="ROE" />,
-      key: "roe",
-      sorter: (a, b) => (a.fundamentals.roe ?? -999) - (b.fundamentals.roe ?? -999),
-      width: 110,
-      render: (_, r) => <ROEBadge roe={r.fundamentals.roe} />,
-    },
-    {
-      title: <ColLabel field="fcfToNetProfit" label="FCF/净利" />,
-      key: "fcfToNetProfit",
-      sorter: (a, b) => (a.fundamentals.fcfToNetProfit ?? -999) - (b.fundamentals.fcfToNetProfit ?? -999),
-      width: 85,
-      render: (_, r) => {
-        const v = r.fundamentals.fcfToNetProfit;
-        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
-        const col = v >= 1.2 ? "var(--green)" : v >= 0.7 ? "var(--gold)" : "var(--red)";
-        const icon = v >= 1.2 ? "🟢" : v >= 0.7 ? "🟡" : "🔴";
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v >= 1.2 ? 700 : 400 }}>{icon} {fmt(v, 2)}</span>;
-      },
-    },
-    {
-      title: <ColLabel field="roic" label="ROIC" />,
-      key: "roic",
-      sorter: (a, b) => (a.fundamentals.roic ?? -999) - (b.fundamentals.roic ?? -999),
-      width: 85,
-      render: (_, r) => {
-        const v = r.fundamentals.roic;
-        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
-        const col = v >= 20 ? "var(--green)" : v >= 10 ? "var(--blue)" : v >= 5 ? "var(--gold)" : "var(--red)";
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v >= 20 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
-      },
-    },
-    {
-      title: <ColLabel field="grossMargin" label="毛利率" />,
-      key: "grossMargin",
-      sorter: (a, b) => (a.fundamentals.grossMargin ?? -999) - (b.fundamentals.grossMargin ?? -999),
-      width: 100,
-      render: (_, r) => {
-        const v = r.fundamentals.grossMargin;
-        const trend = r.fundamentals.grossMarginTrend;
-        if (v == null) return <span style={{ fontFamily: "monospace", color: "var(--text-tertiary)" }}>--</span>;
-        const col = v >= 60 ? "var(--green)" : v >= 30 ? "var(--blue)" : v >= 15 ? "var(--gold)" : "var(--red)";
-        const trendIcon = trend === 1 ? " ↑" : trend === -1 ? " ↓" : "";
-        const trendCol = trend === 1 ? "var(--green)" : trend === -1 ? "var(--red)" : undefined;
-        return (
-          <span style={{ fontFamily: "monospace", color: col }}>
-            {fmt(v, 1)}%
-            {trend !== 0 && trend !== null && (
-              <span style={{ color: trendCol, fontSize: 10, marginLeft: 2 }}>{trendIcon}</span>
-            )}
-          </span>
-        );
-      },
-    },
-    {
-      title: <ColLabel field="dividendPayoutRatio" label="支付率" />,
-      key: "dividendPayoutRatio",
-      sorter: (a, b) => (a.fundamentals.dividendPayoutRatio ?? -999) - (b.fundamentals.dividendPayoutRatio ?? -999),
-      width: 80,
-      render: (_, r) => {
-        const v = r.fundamentals.dividendPayoutRatio;
-        const col = v != null && v > 100 ? "var(--red)" : v != null && v < 30 ? "var(--gold)" : undefined;
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 100 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
-      },
-    },
-    {
-      title: <ColLabel field="debtRatio" label="负债率" />,
-      key: "debtRatio",
-      sorter: (a, b) => (a.fundamentals.debtRatio ?? -999) - (b.fundamentals.debtRatio ?? -999),
-      width: 80,
-      render: (_, r) => {
-        const v = r.fundamentals.debtRatio;
-        const col = v != null && v > 70 ? "var(--red)" : v != null && v > 50 ? "var(--gold)" : undefined;
-        return <span style={{ fontFamily: "monospace", color: col, fontWeight: v != null && v > 70 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
-      },
-    },
-    {
-      title: <ColLabel field="fearIndex" label="恐慌" />,
-      key: "fearIndex",
-      sorter: (a, b) => (a.fearGauge?.overall ?? -1) - (b.fearGauge?.overall ?? -1),
-      width: 60,
-      render: (_, r) => {
-        const v = r.fearGauge?.overall;
-        const col = v != null ? (v < 40 ? "var(--green)" : v < 60 ? "var(--gold)" : "var(--red)") : undefined;
-        return <span style={{ fontFamily: "monospace", color: col }}>{v ?? "--"}</span>;
-      },
-    },
-    {
-      title: <ColLabel field="safetyScore" label="安全" />,
-      key: "safetyScore",
-      sorter: (a, b) => ((a.safetyScore?.score ?? -1) - (b.safetyScore?.score ?? -1)) || ((a.safetyScore?.roeScore ?? -1) - (b.safetyScore?.roeScore ?? -1)),
-      width: 160,
-      render: (_, r) => <SafetyBadge score={r.safetyScore?.score} />,
-    },
-    {
-      title: "增减持",
-      key: "insider",
-      width: 90,
-      render: (_, r) => <InsiderBadge trades={insiderTrades.get(r.quote.code)} />,
+      title: <span style={{ fontSize: 11, fontWeight: 600 }}>🔄 交易</span>,
+      key: "group-trade",
+      children: [
+        {
+          title: <ColLabel field="turnoverRate" label="换手" />,
+          key: "turnoverRate",
+          sorter: (a, b) => (a.fundamentals.turnoverRate ?? -999) - (b.fundamentals.turnoverRate ?? -999),
+          width: 62,
+          render: (_, r) => {
+            const v = r.fundamentals.turnoverRate;
+            const col = v != null && v > 10 ? "var(--red)" : v != null && v > 5 ? "var(--gold)" : undefined;
+            return <span style={{ fontFamily: "monospace", color: col, fontSize: 12, fontWeight: v != null && v > 10 ? 700 : 400 }}>{fmt(v, 1)}%</span>;
+          },
+        },
+        {
+          title: "增减持",
+          key: "insider",
+          width: 76,
+          render: (_, r) => <InsiderBadge trades={insiderTrades.get(r.quote.code)} />,
+        },
+      ],
     },
   ];
 
@@ -382,7 +414,15 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       </Flex>
 
       {/* 表格 */}
-      <div style={{ overflowX: "auto" }}>
+      <div
+        style={{
+          borderRadius: 12,
+          border: "1px solid var(--border-color)",
+          background: "var(--card-bg)",
+          overflowX: "auto",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+        }}
+      >
       <Table
         dataSource={filtered}
         columns={columns}
@@ -391,6 +431,36 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         size="small"
         pagination={false}
         style={{ fontSize: 12 }}
+        components={{
+          header: {
+            cell: (props: any) => (
+              <th
+                {...props}
+                style={{
+                  ...props.style,
+                  padding: "10px 8px",
+                  background: "var(--header-bg, rgba(128,128,128,0.06))",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  whiteSpace: "nowrap",
+                  borderBottom: "1px solid var(--border-color)",
+                }}
+              />
+            ),
+          },
+          body: {
+            cell: (props: any) => (
+              <td
+                {...props}
+                style={{
+                  ...props.style,
+                  padding: "10px 8px",
+                  borderBottom: "1px solid var(--border-color)",
+                }}
+              />
+            ),
+          },
+        }}
         expandable={{
           expandedRowRender: (record) => (
             <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>

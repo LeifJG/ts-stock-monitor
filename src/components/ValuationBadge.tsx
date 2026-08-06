@@ -29,16 +29,17 @@ function pctLabel(pct: number | undefined): string {
 function PctChip({ label, value }: { label: string; value: number | undefined }) {
   const color = pctColor(value);
   return (
-    <Flex align="center" gap={4} style={{ minWidth: 86 }}>
-      <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{label}</span>
+    <Flex align="center" gap={3} style={{ minWidth: 0 }}>
+      <span style={{ fontSize: 9, color: "var(--text-tertiary)" }}>{label}</span>
       <div
         style={{
           position: "relative",
-          width: 44,
-          height: 6,
+          width: 30,
+          height: 5,
           borderRadius: 3,
           background: "rgba(128,128,128,0.18)",
           overflow: "hidden",
+          flexShrink: 0,
         }}
       >
         {value != null && (
@@ -55,7 +56,7 @@ function PctChip({ label, value }: { label: string; value: number | undefined })
           />
         )}
       </div>
-      <span style={{ fontSize: 10, fontWeight: 600, color, fontFamily: "monospace" }}>
+      <span style={{ fontSize: 9, fontWeight: 600, color, fontFamily: "monospace" }}>
         {value != null ? `${value.toFixed(0)}%` : "--"}
       </span>
     </Flex>
@@ -85,14 +86,15 @@ export default function ValuationBadge({ valuation }: { valuation?: ValuationDat
       color="#27272a"
       placement="top"
     >
-      <Flex align="center" gap={6} style={{ cursor: "help" }} wrap="wrap">
+      <Flex align="center" gap={6} style={{ cursor: "help" }}>
         <span
           style={{
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 600,
-            padding: "0 6px",
-            lineHeight: "18px",
+            padding: "0 5px",
+            lineHeight: "16px",
             borderRadius: 9999,
+            whiteSpace: "nowrap",
             color: labelColor,
             background: `${labelColor}1f`,
           }}
