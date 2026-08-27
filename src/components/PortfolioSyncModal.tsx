@@ -61,44 +61,44 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     };
 
     const mappedHeaders = headers.map(h => fieldMap[h] || h);
+    const parsedData: any[] = [];
     
-    const data: any[] = [];
+    // 解析数据行
     for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+      const cols = lines[i].split(sep).map(c => c.trim());
+      if (cols.length === 0) continue;
       
-      // 处理数据行：分割并清理
-      const rawCols = line.split(sep).map(c => c.trim());
-      // 如果第一个元素是空字符串或数字序号，跳过它
-      let startIdx = 0;
-      if (rawCols[0] === "" || /^\d+$/.test(rawCols[0])) {
-        startIdx = 1;
-      }
-      const cols = rawCols.slice(startIdx);
-      
+      // 直接按索引映射，保持和表头对齐（不过滤数据行的空列）
       const row: any = {};
       mappedHeaders.forEach((h, idx) => {
-        row[h] = cols[idx] || "";
+        if (idx < cols.length) {
+          row[h] = cols[idx] || "";
+        }
       });
       
       // 提取必要字段
       const code = (row.code || "").replace(/\s+/g, "");
-      const shares = parseInt(row.shares) || parseInt(row["实际数量"]) || 0;
-      const cost = parseFloat(row.cost) || parseFloat(row["成本价"]) || 0;
-      const price = parseFloat(row.price) || parseFloat(row["市价"]) || cost;
+      const shares = parseInt(row.shares) || 0;
+      const cost = parseFloat(row.cost) || 0;
+      const price = parseFloat(row.price) || cost;
       
       if (!/^\d{6}$/.test(code) || shares <= 0 || cost <= 0) continue;
       
-      data.push({
+      parsedData.push({
         code,
-        name: (row.name || row["证券名称"] || code).replace(/\s+/g, ""),
+        name: (row.name || code).replace(/\s+/g, ""),
         shares,
         cost,
         price,
       });
     }
-
-    return data;
+    
+    if (parsedData.length === 0) {
+      message.error("解析失败，请检查数据格式");
+      return [];
+    }
+    
+    return parsedData;
   };
 
   // 解析 JSON
