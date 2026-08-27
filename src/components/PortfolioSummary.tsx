@@ -4,12 +4,13 @@
 
 "use client";
 
+import { useState, useMemo, useEffect } from "react";
 import { Card, Flex, Typography, Statistic, Row, Col, Empty, Tooltip } from "antd";
 import {
   WalletOutlined, RiseOutlined, GiftOutlined, FundOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
-import type { StockData } from "@/lib/types";
+import type { StockData, Position } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
 
 const { Text } = Typography;
@@ -25,7 +26,45 @@ interface PortfolioSummaryProps {
 }
 
 export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps) {
-  const { positions, metrics, summary } = usePortfolio(stockDataMap);
+  // 获取持仓股票的实时数据（解决港股不在 watchlist 里的问题）
+  const [portfolioStocks, setPortfolioStocks] = useState<Map<string, StockData>>(new Map());
+  
+  useEffect(() => {
+    const fetchPortfolioStocks = async () => {
+      const stored = localStorage.getItem("ts-stock-monitor:portfolio");
+      if (!stored) return;
+      
+      try {
+        const positions = JSON.parse(stored);
+        const codes = positions.map((p: Position) => p.stockCode).filter(Boolean);
+        if (codes.length === 0) return;
+        
+        const res = await fetch(`/api/stocks?codes=${codes.join(",")}`);
+        const json = await res.json();
+        
+        if (json.success && json.data) {
+          const map = new Map<string, StockData>();
+          json.data.forEach((s: StockData) => map.set(s.quote.code, s));
+          setPortfolioStocks(map);
+        }
+      } catch (err) {
+        console.error("获取持仓数据失败:", err);
+      }
+    };
+    
+    fetchPortfolioStocks();
+    const timer = setInterval(fetchPortfolioStocks, 60000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  // 合并 stockDataMap 和 portfolioStocks
+  const combinedStockDataMap = useMemo(() => {
+    const merged = new Map(stockDataMap);
+    portfolioStocks.forEach((v, k) => merged.set(k, v));
+    return merged;
+  }, [stockDataMap, portfolioStocks]);
+  
+  const { positions, metrics, summary } = usePortfolio(combinedStockDataMap);
 
   if (positions.length === 0) {
     return null; // 无持仓不显示

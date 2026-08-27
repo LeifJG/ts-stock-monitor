@@ -30,14 +30,19 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     const firstLine = lines[0];
     const sep = firstLine.includes("\t") ? "\t" : firstLine.includes(",") ? "," : " ";
     
-    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase());
+    const headers = lines[0].split(sep).map(h => h.trim()).filter(h => h); // 过滤空列
     
-    // 银河证券字段映射
+    // 银河证券字段映射（模糊匹配）
     const fieldMap: Record<string, string> = {
       "代码": "code",
+      "证券代码": "code",
       "名称": "name",
+      "证券名称": "name",
       "余额": "shares",
+      "股票余额": "shares",
+      "实际数量": "shares",
       "可用": "available",
+      "可用余额": "available",
       "成本价": "cost",
       "市价": "price",
       "盈亏": "profit",
@@ -50,28 +55,36 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
       "当日买入": "dayBuy",
       "当日卖出": "daySell",
       "持股天数": "holdDays",
+      "交易市场": "market",
     };
 
     const mappedHeaders = headers.map(h => fieldMap[h] || h);
     
     const data: any[] = [];
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(sep).map(c => c.trim());
+      const cols = lines[i].split(sep).map(c => c.trim()).filter(c => c !== "");
+      if (cols.length === 0) continue;
+      
       const row: any = {};
       mappedHeaders.forEach((h, idx) => {
         row[h] = cols[idx] || "";
       });
       
-      // 提取必要字段
-      if (row.code && row.cost && row.shares) {
-        data.push({
-          code: row.code,
-          name: row.name,
-          shares: parseInt(row.shares),
-          cost: parseFloat(row.cost),
-          price: row.price ? parseFloat(row.price) : parseFloat(row.cost),
-        });
-      }
+      // 提取必要字段（过滤掉代码不是6位数字的，如表头行）
+      const code = row.code?.replace(/\s+/g, "");
+      const shares = parseInt(row.shares);
+      const cost = parseFloat(row.cost);
+      
+      if (!/^\d{6}$/.test(code) || isNaN(shares) || isNaN(cost)) continue;
+      if (shares <= 0 || cost <= 0) continue;
+      
+      data.push({
+        code,
+        name: (row.name || code).replace(/\s+/g, ""),
+        shares,
+        cost,
+        price: row.price ? parseFloat(row.price) : cost,
+      });
     }
 
     return data;

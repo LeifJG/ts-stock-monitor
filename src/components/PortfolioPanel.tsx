@@ -172,25 +172,44 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
   // ── 同步持仓处理 ──────────────────────────────────
   const handleSyncPositions = (data: Array<{ code: string; name?: string; shares: number; cost: number }>) => {
     let added = 0;
+    let updated = 0;
     const today = new Date().toISOString().slice(0, 10);
     
     data.forEach(item => {
-      // 避免重复添加
-      const exists = positions.find(p => p.stockCode === item.code);
-      if (exists) return;
-      
-      addPosition({
-        stockCode: item.code,
-        stockName: item.name || item.code,
-        shares: item.shares,
-        buyPrice: item.cost,
-        totalCost: item.shares * item.cost,
-        buyDate: today,
-      });
-      added++;
+      const existing = positions.find(p => p.stockCode === item.code);
+      if (existing) {
+        // 更新已有持仓（ shares/cost 可能变了）
+        if (existing.shares !== item.shares || Math.abs(existing.buyPrice - item.cost) > 0.001) {
+          // 删除旧的，添加新的
+          removePosition(existing.id);
+          addPosition({
+            stockCode: item.code,
+            stockName: item.name || item.code,
+            shares: item.shares,
+            buyPrice: item.cost,
+            totalCost: item.shares * item.cost,
+            buyDate: today,
+          });
+          updated++;
+        }
+      } else {
+        addPosition({
+          stockCode: item.code,
+          stockName: item.name || item.code,
+          shares: item.shares,
+          buyPrice: item.cost,
+          totalCost: item.shares * item.cost,
+          buyDate: today,
+        });
+        added++;
+      }
     });
     
-    message.success(`成功同步 ${added} 条持仓（${data.length - added} 条已存在被跳过）`);
+    const parts: string[] = [];
+    if (added > 0) parts.push(`新增 ${added} 条`);
+    if (updated > 0) parts.push(`更新 ${updated} 条`);
+    if (parts.length === 0) parts.push("无变化");
+    message.success(`同步完成：${parts.join("，")}（${data.length} 条数据）`);
     setSyncOpen(false);
   };
 
