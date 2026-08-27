@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Modal, Button, Tabs, Input, message, Typography, Space } from "antd";
-import { CloudUploadOutlined, CopyOutlined, FileExcelOutlined } from "@ant-design/icons";
+import { Modal, Input, Tabs, message, Button, Space } from "antd";
+import { SyncOutlined } from "@ant-design/icons";
 
 const { TextArea } = Input;
-const { Text, Title } = Typography;
 
 interface PortfolioSyncModalProps {
   open: boolean;
@@ -17,6 +16,7 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
   const [activeTab, setActiveTab] = useState("paste");
   const [pasteContent, setPasteContent] = useState("");
   const [jsonContent, setJsonContent] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   // 解析 CSV/表格粘贴内容（支持银河证券格式）
   const parseCSV = (text: string) => {
@@ -30,9 +30,11 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     const firstLine = lines[0];
     const sep = firstLine.includes("\t") ? "\t" : firstLine.includes(",") ? "," : " ";
     
-    const headers = lines[0].split(sep).map(h => h.trim()).filter(h => h); // 过滤空列
+    // 处理表头：移除开头的空列
+    let headers = lines[0].split(sep).map(h => h.trim());
+    if (headers[0] === "") headers = headers.slice(1);
     
-    // 银河证券字段映射（模糊匹配）
+    // 银河证券字段映射
     const fieldMap: Record<string, string> = {
       "代码": "code",
       "证券代码": "code",
@@ -62,32 +64,69 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     
     const data: any[] = [];
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(sep).map(c => c.trim()).filter(c => c !== "");
-      if (cols.length === 0) continue;
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // 处理数据行：分割并清理
+      const rawCols = line.split(sep).map(c => c.trim());
+      // 如果第一个元素是空字符串或数字序号，跳过它
+      let startIdx = 0;
+      if (rawCols[0] === "" || /^\d+$/.test(rawCols[0])) {
+        startIdx = 1;
+      }
+      const cols = rawCols.slice(startIdx);
       
       const row: any = {};
       mappedHeaders.forEach((h, idx) => {
         row[h] = cols[idx] || "";
       });
       
-      // 提取必要字段（过滤掉代码不是6位数字的，如表头行）
-      const code = row.code?.replace(/\s+/g, "");
-      const shares = parseInt(row.shares);
-      const cost = parseFloat(row.cost);
+      // 提取必要字段
+      const code = (row.code || "").replace(/\s+/g, "");
+      const shares = parseInt(row.shares) || parseInt(row["实际数量"]) || 0;
+      const cost = parseFloat(row.cost) || parseFloat(row["成本价"]) || 0;
+      const price = parseFloat(row.price) || parseFloat(row["市价"]) || cost;
       
-      if (!/^\d{6}$/.test(code) || isNaN(shares) || isNaN(cost)) continue;
-      if (shares <= 0 || cost <= 0) continue;
+      if (!/^\d{6}$/.test(code) || shares <= 0 || cost <= 0) continue;
       
       data.push({
         code,
-        name: (row.name || code).replace(/\s+/g, ""),
+        name: (row.name || row["证券名称"] || code).replace(/\s+/g, ""),
         shares,
         cost,
-        price: row.price ? parseFloat(row.price) : cost,
+        price,
       });
     }
 
     return data;
+  };
+
+  // 解析 JSON
+  const parseJSON = (text: string) => {
+    try {
+      const data = JSON.parse(text);
+      if (!Array.isArray(data)) {
+        message.error("JSON 格式错误，需要数组格式");
+        return [];
+      }
+      
+      return data.map(item => ({
+        code: item.code?.replace(/\s+/g, ""),
+        name: (item.name || item.code || "").replace(/\s+/g, ""),
+        shares: parseInt(item.shares || 0),
+        cost: parseFloat(item.cost || item.buyPrice || 0),
+        price: parseFloat(item.price || item.cost || item.buyPrice || 0),
+      })).filter(item => 
+        /^\d{6}$/.test(item.code) && 
+        !isNaN(item.shares) && 
+        !isNaN(item.cost) &&
+        item.shares > 0 &&
+        item.cost > 0
+      );
+    } catch (e) {
+      message.error("JSON 解析失败");
+      return [];
+    }
   };
 
   // 导入持仓
@@ -105,6 +144,7 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
       
       // 调用 API 保存
       try {
+        setSyncing(true);
         const res = await fetch("/api/portfolio/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,17 +159,24 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
         } else {
           message.error(json.error || "导入失败");
         }
-      } catch (err) {
-        message.error("网络错误");
+      } catch (e: any) {
+        message.error(e.message || "导入失败");
+      } finally {
+        setSyncing(false);
       }
     } else if (activeTab === "json") {
+      if (!jsonContent.trim()) {
+        message.warning("请先粘贴 JSON 数据");
+        return;
+      }
+      const parsed = parseJSON(jsonContent);
+      if (parsed.length === 0) {
+        message.error("解析失败，请检查 JSON 格式");
+        return;
+      }
+      
       try {
-        const parsed = JSON.parse(jsonContent);
-        if (!Array.isArray(parsed)) {
-          message.error("JSON 必须是数组");
-          return;
-        }
-        
+        setSyncing(true);
         const res = await fetch("/api/portfolio/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -144,114 +191,85 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
         } else {
           message.error(json.error || "导入失败");
         }
-      } catch (err) {
-        message.error("JSON 格式错误");
+      } catch (e: any) {
+        message.error(e.message || "导入失败");
+      } finally {
+        setSyncing(false);
       }
     }
   };
 
-  const tabItems = [
-    {
-      key: "paste",
-      label: (
-        <span>
-          <CopyOutlined /> 粘贴表格
-        </span>
-      ),
-      children: (
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <div>
-            <Text type="secondary">
-              从银河证券复制持仓表格，直接粘贴到下方（支持 Excel/网页表格/CSV）
-            </Text>
-          </div>
-          <TextArea
-            rows={10}
-            value={pasteContent}
-            onChange={(e) => setPasteContent(e.target.value)}
-            placeholder={`示例（从银河证券复制后粘贴）：
-代码\t名称\t余额\t可用\t成本价\t市价\t盈亏\t盈亏比(%)\t当日盈亏\t当日盈亏比(%)\t市值\t仓位占比(%)\t证券账户\t当日买入\t当日卖出\t持股天数
-000333\t美的集团\t300\t300\t50.932\t85.430\t10349.47\t67.73\t-288.00\t-1.11\t25629.00\t4.52\t银河 李*高\t0\t0\t266`}
-          />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            💡 提示：支持 Tab/逗号/空格分隔，第一行自动识别为表头
-          </Text>
-        </Space>
-      ),
-    },
-    {
-      key: "json",
-      label: (
-        <span>
-          <FileExcelOutlined /> JSON 数据
-        </span>
-      ),
-      children: (
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <div>
-            <Text type="secondary">
-              高级用户：直接粘贴 JSON 数组（适合程序化导入）
-            </Text>
-          </div>
-          <TextArea
-            rows={10}
-            value={jsonContent}
-            onChange={(e) => setJsonContent(e.target.value)}
-            placeholder={`[
-  {
-    "code": "600519",
-    "name": "贵州茅台",
-    "shares": 100,
-    "cost": 1800.00,
-    "price": 1850.00
-  }
-]`}
-          />
-        </Space>
-      ),
-    },
-  ];
-
   return (
     <Modal
-      title={
-        <Space>
-          <CloudUploadOutlined />
-          <span>持仓同步</span>
-        </Space>
-      }
+      title="同步持仓"
       open={open}
       onCancel={onClose}
       width={700}
-      footer={[
-        <Button key="cancel" onClick={onClose}>
-          取消
-        </Button>,
-        <Button key="import" type="primary" onClick={handleImport}>
-          导入持仓
-        </Button>,
-      ]}
+      footer={null}
     >
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
-      
-      <div style={{ marginTop: 16, padding: 12, background: "#f6f8fa", borderRadius: 6 }}>
-        <Title level={5} style={{ margin: "0 0 8px 0" }}>
-          📋 银河证券导出方法
-        </Title>
-        <Text style={{ fontSize: 13 }}>
-          <strong>方法1：</strong>
-          银河证券客户端 → 持仓 → 选中全部 → Ctrl+C 复制 → 粘贴到上方
-        </Text>
-        <br />
-        <Text style={{ fontSize: 13 }}>
-          <strong>方法2：</strong>
-          手机银河 APP → 持仓 → 长按某条 → 全选 → 分享/复制（部分版本支持）
-        </Text>
-        <br />
-        <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: "block" }}>
-          💡 如果无法导出，可以手动在"持仓管理"面板逐条添加
-        </Text>
-      </div>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: "paste",
+            label: "粘贴表格",
+            children: (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <div style={{ color: "#666", fontSize: 12, marginBottom: 8 }}>
+                  从银河证券或其他券商复制持仓表格，直接粘贴到下方
+                </div>
+                <TextArea
+                  rows={12}
+                  value={pasteContent}
+                  onChange={(e) => setPasteContent(e.target.value)}
+                  placeholder={"操作\t序号\t证券代码\t证券名称\t股票余额\t...\t成本价\t市价\t...\n\t1\t600519\t贵州茅台\t100\t...\t1800.00\t1850.00\t..."}
+                  style={{ fontFamily: "monospace", fontSize: 12 }}
+                />
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  onClick={handleImport}
+                  loading={syncing}
+                  block
+                >
+                  导入持仓
+                </Button>
+              </Space>
+            ),
+          },
+          {
+            key: "json",
+            label: "JSON 格式",
+            children: (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <div style={{ color: "#666", fontSize: 12, marginBottom: 8 }}>
+                  粘贴 JSON 数组格式，每个对象包含 code、name、shares、cost 字段
+                </div>
+                <TextArea
+                  rows={12}
+                  value={jsonContent}
+                  onChange={(e) => setJsonContent(e.target.value)}
+                  placeholder={`[
+  {"code": "600519", "name": "贵州茅台", "shares": 100, "cost": 1800.00, "price": 1850.00},
+  {"code": "000858", "name": "五粮液", "shares": 200, "cost": 150.00, "price": 155.00}
+]`}
+                  style={{ fontFamily: "monospace", fontSize: 12 }}
+                />
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  onClick={handleImport}
+                  loading={syncing}
+                  block
+                >
+                  导入持仓
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
     </Modal>
   );
 }
