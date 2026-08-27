@@ -1,47 +1,47 @@
 {
-  "generated_at": "2026-06-23 09:59",
+  "generated_at": "2026-08-27 10:39",
   "indices": [
     {
       "code": "000300",
       "name": "沪深300",
       "desc": "大盘蓝筹",
       "etf": "510300",
-      "pe": 12.48,
-      "pct_5y": 62.0,
-      "min_pe": 10.1,
-      "max_pe": 15.71,
-      "last_close": 3615.67,
-      "date": "2024-06-04",
-      "data_points": 714,
-      "status": "ok"
+      "pe": 12.5,
+      "pct_5y": 35,
+      "min_pe": 8.0,
+      "max_pe": 18.0,
+      "last_close": 0,
+      "date": "(参考值)",
+      "data_points": 0,
+      "status": "fallback"
     },
     {
       "code": "000016",
       "name": "上证50",
       "desc": "超大盘",
       "etf": "510050",
-      "pe": 10.78,
-      "pct_5y": 70.0,
-      "min_pe": 8.66,
-      "max_pe": 13.09,
-      "last_close": 2483.32,
-      "date": "2024-06-04",
-      "data_points": 714,
-      "status": "ok"
+      "pe": 10.8,
+      "pct_5y": 30,
+      "min_pe": 7.0,
+      "max_pe": 16.0,
+      "last_close": 0,
+      "date": "(参考值)",
+      "data_points": 0,
+      "status": "fallback"
     },
     {
       "code": "000905",
       "name": "中证500",
       "desc": "中盘成长",
       "etf": "510500",
-      "pe": 19.27,
-      "pct_5y": 91.0,
-      "min_pe": 13.3,
-      "max_pe": 20.68,
-      "last_close": 5341.95,
-      "date": "2024-06-04",
-      "data_points": 714,
-      "status": "ok"
+      "pe": 24,
+      "pct_5y": 40,
+      "min_pe": 15,
+      "max_pe": 40,
+      "last_close": 0,
+      "date": "(参考值)",
+      "data_points": 0,
+      "status": "fallback"
     },
     {
       "code": "000922",
@@ -54,7 +54,7 @@
       "max_pe": 7.63,
       "last_close": 5663.53,
       "date": "2024-06-04",
-      "data_points": 714,
+      "data_points": 667,
       "status": "ok"
     },
     {
@@ -63,12 +63,12 @@
       "desc": "小盘",
       "etf": "159845",
       "pe": 22.82,
-      "pct_5y": 46.0,
+      "pct_5y": 49.0,
       "min_pe": 15.72,
       "max_pe": 30.61,
       "last_close": 5313.71,
       "date": "2024-06-04",
-      "data_points": 714,
+      "data_points": 667,
       "status": "ok"
     },
     {
@@ -91,12 +91,12 @@
       "desc": "低波红利",
       "etf": "562850",
       "pe": 17.04,
-      "pct_5y": 77.0,
+      "pct_5y": 76.0,
       "min_pe": 8.05,
       "max_pe": 21.33,
       "last_close": 5929.82,
       "date": "2024-06-04",
-      "data_points": 714,
+      "data_points": 667,
       "status": "ok"
     },
     {
@@ -105,12 +105,12 @@
       "desc": "硬科技",
       "etf": "588000",
       "pe": 31.47,
-      "pct_5y": 26.0,
+      "pct_5y": 28.0,
       "min_pe": 23.38,
-      "max_pe": 77.19,
+      "max_pe": 71.09,
       "last_close": 753.64,
       "date": "2024-06-04",
-      "data_points": 714,
+      "data_points": 667,
       "status": "ok"
     }
   ]

@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Card, Table, Button, Input, InputNumber, Modal, Form, Statistic,
   Flex, Tag, Typography, Empty, Space, Popconfirm, Tooltip, Row, Col,
@@ -13,14 +13,17 @@ import {
   PlusOutlined, DeleteOutlined, DollarOutlined,
   FundOutlined, RiseOutlined, FallOutlined,
   GiftOutlined, WalletOutlined, PieChartOutlined,
+  SyncOutlined,
 } from "@ant-design/icons";
 import DonutChart from "./DonutChart";
 import TradeAdviceCard from "./TradeAdvice";
+import PortfolioSyncModal from "./PortfolioSyncModal";
 import type { Position, PositionMetrics, StockData } from "@/lib/types";
 import type { ValuationData } from "@/app/api/valuation/route";
 import { computeTradeAdvice, type TradeAdvice } from "@/lib/trade-advice";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { usePortfolioSync } from "@/hooks/usePortfolioSync";
+import { message } from "antd";
 
 const { Text, Title } = Typography;
 
@@ -42,12 +45,53 @@ interface PortfolioPanelProps {
 }
 
 export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
+  // 获取持仓股票的实时数据（解决港股不在 watchlist 里的问题）
+  const [portfolioStocks, setPortfolioStocks] = useState<Map<string, StockData>>(new Map());
+  
+  useEffect(() => {
+    const fetchPortfolioStocks = async () => {
+      const stored = localStorage.getItem("ts-stock-monitor:portfolio");
+      if (!stored) return;
+      
+      try {
+        const positions = JSON.parse(stored);
+        const codes = positions.map((p: Position) => p.stockCode).filter(Boolean);
+        if (codes.length === 0) return;
+        
+        const res = await fetch(`/api/stocks?codes=${codes.join(",")}`);
+        const json = await res.json();
+        
+        if (json.success && json.data) {
+          const map = new Map<string, StockData>();
+          json.data.forEach((s: StockData) => map.set(s.quote.code, s));
+          setPortfolioStocks(map);
+        }
+      } catch (err) {
+        console.error("获取持仓数据失败:", err);
+      }
+    };
+    
+    fetchPortfolioStocks();
+    const timer = setInterval(fetchPortfolioStocks, 60000); // 每分钟更新
+    return () => clearInterval(timer);
+  }, []);
+  
+  // 合并 stockDataMap 和 portfolioStocks
+  const combinedStockDataMap = useMemo(() => {
+    const merged = new Map(stockDataMap);
+    portfolioStocks.forEach((v, k) => merged.set(k, v));
+    return merged;
+  }, [stockDataMap, portfolioStocks]);
+  
   const {
     positions, metrics, summary,
     addPosition, removePosition, addDividend, removeDividend,
-  } = usePortfolio(stockDataMap);
+  } = usePortfolio(combinedStockDataMap);
 
   usePortfolioSync(positions);
+
+  // ── 同步弹窗 ──────────────────────────────────
+  const [syncOpen, setSyncOpen] = useState(false);
 
   // ── 添加持仓弹窗 ──────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
@@ -123,6 +167,31 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         setDivPositionId(null);
       }
     }).catch(() => {});
+  };
+
+  // ── 同步持仓处理 ──────────────────────────────────
+  const handleSyncPositions = (data: Array<{ code: string; name?: string; shares: number; cost: number }>) => {
+    let added = 0;
+    const today = new Date().toISOString().slice(0, 10);
+    
+    data.forEach(item => {
+      // 避免重复添加
+      const exists = positions.find(p => p.stockCode === item.code);
+      if (exists) return;
+      
+      addPosition({
+        stockCode: item.code,
+        stockName: item.name || item.code,
+        shares: item.shares,
+        buyPrice: item.cost,
+        totalCost: item.shares * item.cost,
+        buyDate: today,
+      });
+      added++;
+    });
+    
+    message.success(`成功同步 ${added} 条持仓（${data.length - added} 条已存在被跳过）`);
+    setSyncOpen(false);
   };
 
   // ── 列定义 ──────────────────────────────────────────
@@ -286,9 +355,14 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         </Flex>
       }
       extra={
-        <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-          添加持仓
-        </Button>
+        <Space>
+          <Button size="small" icon={<SyncOutlined />} onClick={() => setSyncOpen(true)} style={{ borderColor: "var(--blue)", color: "var(--blue)" }}>
+            同步持仓
+          </Button>
+          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+            添加持仓
+          </Button>
+        </Space>
       }
     >
       {/* ═══ 汇总统计 + 持仓分布环形图 ═══ */}
@@ -393,7 +467,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         </Empty>
       ) : (
         <Table
-          dataSource={positions}
+          dataSource={positions.filter(p => p.shares > 0)}
           columns={columns}
           rowKey="id"
           size="small"
@@ -466,6 +540,13 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* ═══ 同步持仓弹窗 ═══ */}
+      <PortfolioSyncModal
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        onSync={handleSyncPositions}
+      />
     </Card>
   );
 }

@@ -154,17 +154,22 @@ def fetch_dividend_yields(codes: list) -> dict:
 
 def analyze_position(pos: dict, quote: dict) -> dict:
     """对单只持仓生成操作建议"""
-    code = pos["stockCode"]
-    name = pos["stockName"]
-    shares = pos["shares"]
-    buy_price = pos["buyPrice"]
-    total_cost = pos["totalCost"]
-    buy_date = pos.get("buyDate", "")
+    # 适配两种字段格式
+    code = pos.get("stockCode") or pos.get("code", "")
+    name = pos.get("stockName") or pos.get("name") or quote.get("name", code)
+    shares = pos.get("shares", 0)
+    buy_price = pos.get("buyPrice") or pos.get("cost", 0)
+    total_cost = pos.get("totalCost") or (buy_price * shares if buy_price and shares else 0)
+    buy_date = pos.get("buyDate") or pos.get("addedAt", "")
     dividends = pos.get("dividends", [])
 
     current_price = quote.get("price", buy_price)
     div_yield = quote.get("dividendYield")
     pe = quote.get("pe")
+    
+    # 如果 buy_price 或 current_price 为 0，无法计算，跳过此持仓
+    if buy_price <= 0 or current_price <= 0:
+        return None
 
     # 计算指标
     market_value = shares * current_price
@@ -175,7 +180,7 @@ def analyze_position(pos: dict, quote: dict) -> dict:
 
     # 成本股息率
     cost_yield = None
-    if div_yield and real_cost > 0:
+    if div_yield and real_cost > 0 and shares > 0:
         annual_dps = (div_yield / 100) * current_price
         real_cost_per_share = real_cost / shares
         cost_yield = round((annual_dps / real_cost_per_share) * 100, 2)
@@ -190,7 +195,11 @@ def analyze_position(pos: dict, quote: dict) -> dict:
             pass
 
     # ── 策略 1: 网格交易建议 ──────────────────────────
-    grid_volatility = max(abs(current_price - buy_price) / buy_price * 100, 3)
+    # 确保 buy_price 不为 0 才能计算波动率
+    if buy_price > 0:
+        grid_volatility = max(abs(current_price - buy_price) / buy_price * 100, 3)
+    else:
+        grid_volatility = 3
     grid_step = max(round(grid_volatility * 0.5, 1), 2)  # 网格步长
 
     grid_levels = []
@@ -417,7 +426,8 @@ def main():
         return
 
     # 获取所有股票代码和当前行情
-    codes = [p["stockCode"] for p in portfolio]
+    # 兼容两种字段名：code 或 stockCode
+    codes = [p.get("stockCode") or p.get("code") for p in portfolio]
     quotes = fetch_tencent_quotes(codes)
 
     # 从 cninfo 获取真实每股股利（并行，严格可靠）
@@ -442,13 +452,16 @@ def main():
     # 逐个分析
     advice = []
     for pos in portfolio:
-        code = pos["stockCode"]
+        code = pos.get("stockCode") or pos.get("code")
         quote = quotes.get(code, {})
         # 更新名称
         if quote.get("name"):
             pos["stockName"] = quote["name"]
+        # 确保 stockCode 字段存在
+        pos["stockCode"] = code
         result = analyze_position(pos, quote)
-        advice.append(result)
+        if result:  # 只添加有效的分析结果
+            advice.append(result)
 
     print(json.dumps({"success": True, "advice": advice, "generatedAt": datetime.now().isoformat()}, ensure_ascii=False))
 

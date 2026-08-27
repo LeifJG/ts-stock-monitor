@@ -158,6 +158,7 @@ export default function Home() {
         showNotes={showNotes}
         onNotesToggle={() => setShowNotes(!showNotes)}
         triggerCount={triggers.length}
+        onSyncClick={() => setShowPortfolio(!showPortfolio)}
       />
 
       {/* ═══ 大盘指数 + 组合收益（并排） ═══ */}

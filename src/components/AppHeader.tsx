@@ -48,6 +48,7 @@ interface AppHeaderProps {
   onReportToggle: () => void;
   showNotes: boolean;
   onNotesToggle: () => void;
+  onSyncClick: () => void;
   triggerCount: number;
 }
 
@@ -70,6 +71,7 @@ export default function AppHeader({
   onReportToggle,
   showNotes,
   onNotesToggle,
+  onSyncClick,
   triggerCount,
 }: AppHeaderProps) {
   const { isDark, toggleTheme } = useTheme();
@@ -124,6 +126,12 @@ export default function AppHeader({
       label: "持仓管理",
       icon: <WalletOutlined />,
       onClick: onPortfolioToggle,
+    },
+    {
+      key: "sync",
+      label: "同步持仓",
+      icon: <DatabaseOutlined />,
+      onClick: onSyncClick,
     },
     {
       key: "industry",

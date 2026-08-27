@@ -1,41 +1,61 @@
-// ============================================================
-// src/app/api/portfolio/sync/route.ts — 持仓数据持久化
-// ============================================================
-// 将前端 localStorage 的持仓数据同步到服务端 JSON 文件，
-// 供收盘后的分析脚本和定时任务使用。
+// src/app/api/portfolio/sync/route.ts
+import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
-import { NextRequest, NextResponse } from "next/server";
-import * as fs from "fs";
-import * as path from "path";
+const PORTFOLIO_FILE = path.join(process.cwd(), 'data', 'portfolio.json');
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const PORTFOLIO_FILE = path.join(DATA_DIR, "portfolio.json");
-
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+interface Position {
+  code: string;
+  shares: number;
+  cost: number;
+  price?: number;
+  profit?: number;
+  marketValue?: number;
+  addedAt?: string;
+  note?: string;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    ensureDir();
-    const body = await request.json();
-    // 写入持仓数据
-    fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(body, null, 2), "utf-8");
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  try {
-    ensureDir();
-    if (!fs.existsSync(PORTFOLIO_FILE)) {
-      return NextResponse.json({ success: true, data: [] });
+    const { data } = await request.json();
+    
+    if (!Array.isArray(data)) {
+      return NextResponse.json({ error: 'data 必须是数组' }, { status: 400 });
     }
-    const raw = fs.readFileSync(PORTFOLIO_FILE, "utf-8");
-    return NextResponse.json({ success: true, data: JSON.parse(raw) });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+
+    // 读取现有 portfolio
+    let portfolio: Position[] = [];
+    if (fs.existsSync(PORTFOLIO_FILE)) {
+      const raw = fs.readFileSync(PORTFOLIO_FILE, 'utf-8');
+      portfolio = JSON.parse(raw);
+    }
+
+    // 转换并合并数据
+    const newPositions = data.map((item: any) => ({
+      code: String(item.stockCode || item.code || ''),
+      shares: parseInt(item.shares) || 0,
+      cost: parseFloat(item.costPrice || item.cost) || 0,
+      price: parseFloat(item.currentPrice || item.price) || undefined,
+      profit: parseFloat(item.profit) || undefined,
+      marketValue: parseFloat(item.marketValue) || undefined,
+      addedAt: new Date().toISOString(),
+      note: `从银河证券同步 (${new Date().toLocaleDateString('zh-CN')})`
+    }));
+
+    // 替换整个 portfolio（全量同步模式）
+    portfolio = newPositions;
+
+    // 写回文件
+    fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(portfolio, null, 2));
+
+    return NextResponse.json({ 
+      success: true, 
+      count: portfolio.length,
+      message: `同步成功：${portfolio.length} 条持仓`
+    });
+  } catch (error) {
+    console.error('Portfolio sync error:', error);
+    return NextResponse.json({ error: '同步失败' }, { status: 500 });
   }
 }
