@@ -73,7 +73,7 @@ export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps
   // 计算年化分红收入（基于当前股息率和持仓）
   let annualDividendIncome = 0;
   for (const pos of positions) {
-    const sd = stockDataMap.get(pos.stockCode);
+    const sd = combinedStockDataMap.get(pos.stockCode);
     const yield_ = sd?.fundamentals.dividendYield;
     const currentPrice = sd?.quote.currentPrice ?? pos.buyPrice;
     const marketValue = pos.shares * currentPrice;
