@@ -30,9 +30,10 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     const firstLine = lines[0];
     const sep = firstLine.includes("\t") ? "\t" : firstLine.includes(",") ? "," : " ";
     
-    // 处理表头：移除开头的空列
+    // 处理表头：移除开头和结尾的空列
     let headers = lines[0].split(sep).map(h => h.trim());
     if (headers[0] === "") headers = headers.slice(1);
+    if (headers.length > 0 && headers[headers.length - 1] === "") headers = headers.slice(0, -1);
     
     // 银河证券字段映射
     const fieldMap: Record<string, string> = {
@@ -60,33 +61,34 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
       "交易市场": "market",
     };
 
-    const mappedHeaders = headers.map(h => fieldMap[h] || h);
+    // 解析数据行 - 按实际列内容智能匹配
     const parsedData: any[] = [];
-    
-    // 解析数据行
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(sep).map(c => c.trim());
+      const cols = lines[i].split(sep).map(c => c.trim()).filter(c => c !== "");
       if (cols.length === 0) continue;
       
-      // 直接按索引映射，保持和表头对齐（不过滤数据行的空列）
-      const row: any = {};
-      mappedHeaders.forEach((h, idx) => {
-        if (idx < cols.length) {
-          row[h] = cols[idx] || "";
+      // 找到证券代码的位置（5-6位数字，支持A股和港股）
+      let codeIdx = -1;
+      for (let j = 0; j < Math.min(cols.length, 5); j++) {
+        if (/^\d{5,6}$/.test(cols[j])) {
+          codeIdx = j;
+          break;
         }
-      });
+      }
+      if (codeIdx === -1) continue;
       
-      // 提取必要字段
-      const code = (row.code || "").replace(/\s+/g, "");
-      const shares = parseInt(row.shares) || 0;
-      const cost = parseFloat(row.cost) || 0;
-      const price = parseFloat(row.price) || cost;
+      // 根据代码位置推断其他字段
+      const code = cols[codeIdx];
+      const name = cols[codeIdx + 1] || "";
+      const shares = parseFloat(cols[codeIdx + 2]) || parseFloat(cols[codeIdx + 3]) || 0; // 余额或实际数量
+      const cost = parseFloat(cols[codeIdx + 6]) || 0; // 成本价（代码后第7列）
+      const price = parseFloat(cols[codeIdx + 7]) || cost; // 市价（代码后第8列）
       
-      if (!/^\d{6}$/.test(code) || shares <= 0 || cost <= 0) continue;
+      if (!code || shares <= 0 || cost <= 0) continue;
       
       parsedData.push({
         code,
-        name: (row.name || code).replace(/\s+/g, ""),
+        name: name.replace(/\s+/g, ""),
         shares,
         cost,
         price,
@@ -100,8 +102,6 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
     
     return parsedData;
   };
-
-  // 解析 JSON
   const parseJSON = (text: string) => {
     try {
       const data = JSON.parse(text);
