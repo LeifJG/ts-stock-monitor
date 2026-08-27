@@ -107,13 +107,20 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
   const metrics = useMemo(() => {
     const m = new Map<string, PositionMetrics>();
 
+    // 港股汇率（港币转人民币）
+    const HKD_TO_CNY = 0.86;
+
     for (const pos of positions) {
       const stockData = stockDataMap.get(pos.stockCode);
       const currentPrice = stockData?.quote.currentPrice ?? pos.buyPrice;
       const dividendYield = stockData?.fundamentals.dividendYield;
 
-      const marketValue = pos.shares * currentPrice;
-      const totalDividends = pos.dividends.reduce((sum, d) => sum + d.total, 0);
+      // 判断是否是港股（代码以 0 开头的6位数字，或 09xxx、01xxx）
+      const isHKStock = /^0[19]\d{4}$/.test(pos.stockCode) || /^0\d{5}$/.test(pos.stockCode);
+      const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
+
+      const marketValue = pos.shares * currentPrice * exchangeRate;
+      const totalDividends = pos.dividends.reduce((sum, d) => sum + d.total, 0) * exchangeRate;
       const realCost = pos.totalCost - totalDividends;
       const totalProfit = marketValue + totalDividends - pos.totalCost;
 
@@ -121,13 +128,13 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
       // 用当前股息率推算年化每股分红
       let costYield = 0;
       if (dividendYield != null && dividendYield > 0 && realCost > 0) {
-        const annualDps = (dividendYield / 100) * currentPrice; // 每股年分红
+        const annualDps = (dividendYield / 100) * currentPrice * exchangeRate; // 每股年分红（人民币）
         const realCostPerShare = realCost / pos.shares;
         costYield = (annualDps / realCostPerShare) * 100;
       }
 
       m.set(pos.id, {
-        currentPrice,
+        currentPrice: currentPrice * exchangeRate,
         marketValue: Math.round(marketValue * 100) / 100,
         totalProfit: Math.round(totalProfit * 100) / 100,
         totalProfitPct:
