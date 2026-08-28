@@ -1,8 +1,8 @@
 "use client";
 
-import { Card, Flex } from "antd";
+import { Flex } from "antd";
 import {
-  WalletOutlined, RiseOutlined, GiftOutlined,
+  WalletOutlined, GiftOutlined,
 } from "@ant-design/icons";
 import type { StockData } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
