@@ -6,6 +6,7 @@ import {
 } from "@ant-design/icons";
 import type { StockData } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
+import { getExchangeRate } from "@/lib/stockUtils";
 
 interface PortfolioMiniCardProps {
   stockDataMap: Map<string, StockData>;
@@ -21,13 +22,14 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
 
   if (positions.length === 0) return null;
 
-  // Compute annual dividend income
+  // Compute annual dividend income with exchange rate
   let annualDividendIncome = 0;
   for (const pos of positions) {
     const sd = stockDataMap.get(pos.stockCode);
     const yield_ = sd?.fundamentals.dividendYield;
     const currentPrice = sd?.quote.currentPrice ?? pos.buyPrice;
-    const marketValue = pos.shares * currentPrice;
+    const exchangeRate = getExchangeRate(pos.stockCode);
+    const marketValue = pos.shares * currentPrice * exchangeRate;
     if (yield_ != null && yield_ > 0) {
       annualDividendIncome += marketValue * (yield_ / 100);
     }
