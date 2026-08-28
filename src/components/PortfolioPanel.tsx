@@ -18,6 +18,7 @@ import {
 import DonutChart from "./DonutChart";
 import TradeAdviceCard from "./TradeAdvice";
 import PortfolioSyncModal from "./PortfolioSyncModal";
+import { getExchangeRate } from "@/lib/stockUtils";
 import type { Position, PositionMetrics, StockData } from "@/lib/types";
 import type { ValuationData } from "@/app/api/valuation/route";
 import { computeTradeAdvice, type TradeAdvice } from "@/lib/trade-advice";
@@ -400,7 +401,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
               getMarketValue={(p) => {
                 const sd = stockDataMap.get(p.stockCode);
                 const price = sd?.quote.currentPrice ?? p.buyPrice;
-                return p.shares * price;
+                return p.shares * price * getExchangeRate(p.stockCode);
               }}
               getLabel={(p) => p.stockName}
               size={120}
@@ -410,11 +411,11 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
               {positions.slice(0, 6).map((p, i) => {
                 const mv = (() => {
                   const sd = stockDataMap.get(p.stockCode);
-                  return (sd?.quote.currentPrice ?? p.buyPrice) * p.shares;
+                  return (sd?.quote.currentPrice ?? p.buyPrice) * p.shares * getExchangeRate(p.stockCode);
                 })();
                 const total = positions.reduce((s, pp) => {
                   const sd2 = stockDataMap.get(pp.stockCode);
-                  return s + (sd2?.quote.currentPrice ?? pp.buyPrice) * pp.shares;
+                  return s + (sd2?.quote.currentPrice ?? pp.buyPrice) * pp.shares * getExchangeRate(pp.stockCode);
                 }, 0);
                 const pct = total > 0 ? (mv / total) * 100 : 0;
                 const colors = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#06b6d4"];
