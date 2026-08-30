@@ -86,14 +86,19 @@ export interface DividendRecord {
 
 /** 持仓记录 */
 export interface Position {
-  id: string;
-  stockCode: StockCode;
-  stockName: string;        // 缓存名称
-  shares: number;           // 持有股数
-  buyPrice: number;         // 买入均价（元/股）
-  totalCost: number;        // 总投入（含手续费）
-  buyDate: string;          // 首次买入日期
-  dividends: DividendRecord[];
+  id?: string;                    // 可选（同步数据没有）
+  stockCode?: StockCode;          // 标准字段
+  code?: StockCode;               // 兼容同步数据
+  stockName?: string;             // 缓存名称
+  shares: number;                 // 持有股数
+  buyPrice?: number;              // 标准字段：买入均价（元/股）
+  price?: number;                 // 兼容同步数据
+  totalCost?: number;             // 标准字段：总投入（含手续费）
+  cost?: number;                  // 兼容同步数据：总成本
+  buyDate?: string;               // 首次买入日期
+  dividends?: DividendRecord[];   // 分红记录（同步数据可能没有）
+  addedAt?: string;               // 同步时间
+  note?: string;                  // 备注
 }
 
 /** 持仓计算指标 */
