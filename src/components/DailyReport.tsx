@@ -270,6 +270,27 @@ export default function DailyReport({ open, onClose }: DailyReportProps) {
     }
   }, [open, fetchReport]);
 
+  // 强制重新生成（POST）
+  const [regenerating, setRegenerating] = useState(false);
+  const regenReport = useCallback(async () => {
+    setRegenerating(true);
+    try {
+      const res = await fetch("/api/daily-report", { method: "POST" });
+      const data = await res.json();
+      if (data.success && data.content) {
+        setContent(data.content);
+        setGeneratedAt(data.generatedAt);
+        setError(null);
+      } else {
+        setError(data.error || "生成失败");
+      }
+    } catch (err: any) {
+      setError(err.message || "网络错误");
+    } finally {
+      setRegenerating(false);
+    }
+  }, []);
+
   const formatTime = (iso: string) => {
     try {
       const d = new Date(iso);
@@ -312,6 +333,15 @@ export default function DailyReport({ open, onClose }: DailyReportProps) {
         <Button
           size="small"
           icon={<ReloadOutlined />}
+          onClick={regenReport}
+          loading={regenerating}
+          style={{ marginRight: 8 }}
+        >
+          重新生成
+        </Button>
+        <Button
+          size="small"
+          icon={<ReloadOutlined />}
           onClick={fetchReport}
           loading={loading}
         >
@@ -341,7 +371,7 @@ export default function DailyReport({ open, onClose }: DailyReportProps) {
             <div style={{ textAlign: "center" }}>
               <div style={{ marginBottom: 4 }}>📭 {error}</div>
               <Text type="secondary" style={{ fontSize: 11 }}>
-                日报由定时任务在交易日 7:30 生成
+                交易日 15:10 由定时任务自动生成，打开本窗口也会自动补生成
               </Text>
             </div>
           </Flex>

@@ -1,34 +1,42 @@
 // ============================================================
-// src/app/api/daily-report/route.ts — 日报缓存接口
+// src/app/api/daily-report/route.ts — 收盘日报接口
+// ------------------------------------------------------------
+// GET  : 读取缓存报告；若缺失或已过期（交易日 15:05 后无当日报告）
+//        则自动重新生成 —— 兜底机制，页面打开即自愈
+// POST : 强制重新生成（systemd timer 收盘后调用 / 手动刷新）
 // ============================================================
 
 import { NextResponse } from "next/server";
-import * as fs from "fs";
-import * as path from "path";
+import { generateDailyReport, isReportFresh } from "@/lib/daily-report";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120; // 生成需拉取全部持仓实时行情
 
 export async function GET() {
-  const reportPath = path.join(process.cwd(), "cache", "latest_report.md");
   try {
-    if (fs.existsSync(reportPath)) {
-      const content = fs.readFileSync(reportPath, "utf-8");
-      const stats = fs.statSync(reportPath);
-      return NextResponse.json({
-        success: true,
-        content,
-        generatedAt: stats.mtime.toISOString(),
-      });
-    }
-    return NextResponse.json({
-      success: false,
-      content: null,
-      error: "暂无日报数据，请等待定时任务生成",
-    });
+    const { content, generatedAt } = await generateDailyReport(false);
+    return NextResponse.json({ success: true, content, generatedAt });
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, error: err.message },
+      { success: false, error: err?.message || "日报生成失败" },
       { status: 500 }
     );
   }
+}
+
+export async function POST() {
+  try {
+    const { content, generatedAt } = await generateDailyReport(true);
+    return NextResponse.json({ success: true, content, generatedAt, forced: true });
+  } catch (err: any) {
+    return NextResponse.json(
+      { success: false, error: err?.message || "日报生成失败" },
+      { status: 500 }
+    );
+  }
+}
+
+// 供监控/健康检查用：报告是否已覆盖今日收盘
+export async function HEAD() {
+  return new Response(null, { status: isReportFresh() ? 200 : 409 });
 }
