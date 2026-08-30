@@ -11,8 +11,9 @@ const execAsync = promisify(exec);
 import * as path from "path";
 import * as fs from "fs";
 
-/** 默认代理（WSL 内 Clash） */
-export const DEFAULT_PROXY = "http://192.168.124.11:7890";
+/** 默认代理（P1-6：已废弃硬编码 IP；python 脚本内部经 net_utils 动态探测，
+ *  此处只透传环境变量，未设=直连） */
+const envProxy = (process.env.http_proxy || process.env.HTTP_PROXY) as string | undefined;
 
 /**
  * 解析要使用的 Python 解释器路径
@@ -51,8 +52,8 @@ export function runPythonScript(
   const env = {
     ...process.env,
     // 走代理访问国内行情源
-    http_proxy: process.env.http_proxy || DEFAULT_PROXY,
-    https_proxy: process.env.https_proxy || DEFAULT_PROXY,
+    http_proxy: envProxy,
+    https_proxy: envProxy,
     ...options.env,
   };
 
@@ -78,8 +79,8 @@ export async function runPythonScriptAsync(
 
   const env = {
     ...process.env,
-    http_proxy: process.env.http_proxy || DEFAULT_PROXY,
-    https_proxy: process.env.https_proxy || DEFAULT_PROXY,
+    http_proxy: envProxy,
+    https_proxy: envProxy,
     ...options.env,
   };
 

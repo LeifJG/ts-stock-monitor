@@ -1,0 +1,10 @@
+[Unit]
+Description=ts-stock-monitor 收盘日报定时器（交易日 15:05，错过补跑）
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:05:00
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

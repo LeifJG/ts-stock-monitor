@@ -1,0 +1,16 @@
+[Unit]
+Description=ts-stock-monitor 收盘日报生成（先刷新波动率/汇率/估值，再触发生成）
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/lijg/ts-stock-monitor
+# 1) 刷新真实波动率缓存（网格步长依据，供日报/操作建议/网格面板统一口径）
+ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-monitor/scripts/fetch_volatility.py
+# 2) 刷新港币汇率（P1-5：替代硬编码 0.86，写入 cache/fx_rate.json）
+ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-monitor/scripts/fetch_fx_rate.py
+# 3) 刷新指数估值温度表（P0-3修正：必须用 .venv python，系统 python 无 akshare，
+#    原配置导致该步每天静默失败）
+ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-monitor/scripts/fetch_index_valuations.py
+# 4) 触发日报强制生成（重试 5 次 × 30s，容忍服务启动慢）
+ExecStart=/bin/sh -c 'for i in 1 2 3 4 5; do curl -sf -m 300 -X POST http://localhost:3000/api/daily-report >/dev/null && exit 0; sleep 30; done; exit 1'
+TimeoutStartSec=900

@@ -13,8 +13,9 @@ valuation_data.py — 估值分位数据模块
 import os, json, sys, math
 from pathlib import Path
 
-os.environ["HTTP_PROXY"] = "http://192.168.124.11:7890"
-os.environ["HTTPS_PROXY"] = "http://192.168.124.11:7890"
+from net_utils import setup_proxy_env
+
+setup_proxy_env()
 import akshare as ak
 import numpy as np
 import pandas as pd

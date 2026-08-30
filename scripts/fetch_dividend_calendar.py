@@ -17,8 +17,9 @@ import os
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
-os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
+from net_utils import setup_proxy_env
+
+setup_proxy_env()
 
 import akshare as ak
 import pandas as pd

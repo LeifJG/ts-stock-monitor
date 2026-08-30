@@ -1,0 +1,18 @@
+[Unit]
+Description=ts-stock-monitor 股票看板（Next.js 生产模式）
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lijg/ts-stock-monitor
+# 生产模式：性能更好、无 dev 编译告警；崩溃自动拉起
+ExecStart=/home/lijg/ts-stock-monitor/node_modules/.bin/next start -p 3000
+Restart=on-failure
+RestartSec=5
+# 优雅退出：给 next 15s 保存状态
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

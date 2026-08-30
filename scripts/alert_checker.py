@@ -7,6 +7,7 @@ alert_checker.py — 服务端预警检查引擎
 
 import json
 import re
+import time
 import urllib.request
 import os
 import sys
@@ -16,14 +17,27 @@ from pathlib import Path
 # 导入统一股息率模块
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from dividend_data import batch_fetch, get_dividend_yield
-
-os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
-os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
+from net_utils import http_get
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 PORTFOLIO_FILE = DATA_DIR / "portfolio.json"
 ALERTS_FILE = DATA_DIR / "alerts.json"
+STATE_FILE = BASE_DIR / "cache" / "alert_state.json"
+DEDUP_WINDOW_SEC = 4 * 3600  # 同类告警 4 小时内不重复推送
+
+
+# ─── 网络工具：直连优先，失败回退 Clash 代理 ──────────────────
+def dashboard_url() -> str:
+    """看板地址：WSL 局域网 IP 优先（手机同局域网可直达），兜底 localhost"""
+    try:
+        import subprocess
+        ips = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split()
+        if ips:
+            return f"http://{ips[0]}:3000"
+    except Exception:
+        pass
+    return "http://localhost:3000"
 
 
 # ─── 工具函数 ────────────────────────────────────────────────
@@ -42,15 +56,9 @@ def fetch_tencent(codes: list) -> dict:
             items.append(f"sz{c}")
 
     url = f"https://qt.gtimg.cn/q={','.join(items)}"
-    proxy = urllib.request.ProxyHandler({
-        'http': os.environ['HTTP_PROXY'],
-        'https': os.environ['HTTPS_PROXY'],
-    })
-    opener = urllib.request.build_opener(proxy)
 
     try:
-        resp = opener.open(url, timeout=15)
-        text = resp.read().decode("gbk")
+        text = http_get(url, timeout=15).decode("gbk")
     except Exception:
         return {}
 
@@ -153,7 +161,8 @@ def check_rule(rule: dict, stock: dict, portfolio_map: dict, upcoming_dividends:
             pos = portfolio_map.get(c)
             if not pos:
                 continue
-            cost_basis = pos.get("buyPrice", 0)
+            # 兼容两种成本字段：localStorage 的 buyPrice / portfolio.json 的 cost
+            cost_basis = pos.get("buyPrice") or pos.get("cost") or 0
             if cost_basis <= 0:
                 continue
             current_price = s["price"]
@@ -165,6 +174,7 @@ def check_rule(rule: dict, stock: dict, portfolio_map: dict, upcoming_dividends:
                     dividend_yield = f"，成本股息率 {pos['costYield']:.1f}%"
                 results.append({
                     "stockCode": c, "stockName": name,
+                    "kind": "costBasis",
                     "message": f"🔴 跌破成本线 {threshold:.0f}%！当前价 ¥{current_price:.2f}，成本 ¥{cost_basis:.2f}，已跌 {drop_pct:.1f}%{dividend_yield}",
                     "priority": "high",
                 })
@@ -181,6 +191,7 @@ def check_rule(rule: dict, stock: dict, portfolio_map: dict, upcoming_dividends:
                     if 0 <= days_until <= val:
                         results.append({
                             "stockCode": c, "stockName": name,
+                            "kind": f"dividendDate:{div_date_str[:10]}",
                             "message": f"🟢 {name} 即将分红！预计除权日 {div_date_str[:10]}（{days_until}天后），每股约 ¥{div.get('perShare', 0):.4f}",
                             "priority": "medium",
                         })
@@ -204,6 +215,7 @@ def check_rule(rule: dict, stock: dict, portfolio_map: dict, upcoming_dividends:
                 unit = "%" if field in ("changePercent", "dividendYield", "turnoverRate", "roe", "dividendPayoutRatio", "debtRatio") else ""
                 results.append({
                     "stockCode": c, "stockName": name,
+                    "kind": f"field:{field}:{op}:{val}",
                     "message": f"⚠️ {label}：{name} 当前 {current_val}{unit}".strip(),
                     "priority": "medium",
                 })
@@ -226,19 +238,16 @@ def main():
         return
 
     # 读取持仓数据（用于成本价预警）
+    # 兼容两种格式：portfolio.json（code/shares/cost，银河同步）与 localStorage（stockCode/buyPrice）
     portfolio = []
     portfolio_map = {}
     if PORTFOLIO_FILE.exists():
         try:
             portfolio = json.loads(PORTFOLIO_FILE.read_text("utf-8"))
             for p in portfolio:
-                cost_yield = None
-                if p.get("dividends") and p.get("totalCost", 0) > 0:
-                    total_divs = sum(d.get("total", 0) for d in p.get("dividends", []))
-                    real_cost = p["totalCost"] - total_divs
-                    if real_cost > 0 and p.get("buyPrice", 0) > 0:
-                        cost_yield = None  # 简化
-                portfolio_map[p["stockCode"]] = p
+                code = str(p.get("code") or p.get("stockCode") or "")
+                if code:
+                    portfolio_map[code] = p
         except Exception:
             pass
 
@@ -246,10 +255,10 @@ def main():
     codes_to_check = set()
     for r in rules:
         alert_type = r.get("alertType", "field")
-        if alert_type == "costBasis":
-            codes_to_check.update(p["stockCode"] for p in portfolio)
-        elif alert_type == "dividendDate":
-            codes_to_check.update(p["stockCode"] for p in portfolio)
+        if alert_type in ("costBasis", "dividendDate"):
+            codes_to_check.update(
+                str(p.get("code") or p.get("stockCode") or "") for p in portfolio
+            )
         elif r.get("stockCode"):
             codes_to_check.add(r["stockCode"])
         else:
@@ -261,7 +270,7 @@ def main():
         codes_to_check.discard("noop_global")
         # 对于全局规则，检查所有持仓 + 自选股
         for p in portfolio:
-            codes_to_check.add(p["stockCode"])
+            codes_to_check.add(str(p.get("code") or p.get("stockCode") or ""))
 
     codes_to_check.discard("noop_global")
     codes_list = [c for c in codes_to_check if c]
@@ -307,6 +316,30 @@ def main():
     # 排序：先 High 再 Medium
     unique_alerts.sort(key=lambda a: 0 if a["priority"] == "high" else 1)
 
+    # ─── 去重推送：同类告警（股票+规则类型）4 小时内只推一次 ──
+    # 注意：状态在输出前落盘 —— 若推送失败由 alert_push.sh 落盘补救
+    now_ts = time.time()
+    try:
+        state = json.loads(STATE_FILE.read_text("utf-8"))
+    except Exception:
+        state = {}
+    state = {k: ts for k, ts in state.items() if now_ts - ts < 86400}  # 清理超1天旧键
+    fresh_alerts = []
+    for a in unique_alerts:
+        key = f"{a['stockCode']}:{a.get('kind', a['message'][:30])}"
+        if now_ts - state.get(key, 0) < DEDUP_WINDOW_SEC:
+            continue
+        fresh_alerts.append(a)
+        state[key] = now_ts
+    if not fresh_alerts:
+        return  # 全部处于去重窗口内，静默
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False), "utf-8")
+    except Exception:
+        pass
+    unique_alerts = fresh_alerts
+
     now = datetime.now().strftime("%H:%M")
     lines = ["⚠️ **盘中预警**", f"检查时间: {now}", "", "---", ""]
 
@@ -317,7 +350,7 @@ def main():
         lines.append("")
 
     lines.append("---")
-    lines.append("💡 打开看板查看更多: http://localhost:3000")
+    lines.append(f"💡 打开看板查看更多: {dashboard_url()}")
 
     print("\n".join(lines))
 

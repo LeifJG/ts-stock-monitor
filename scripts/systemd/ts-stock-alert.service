@@ -1,0 +1,8 @@
+[Unit]
+Description=ts-stock-monitor 盘中预警检查+微信推送（交易时段内每10分钟）
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/lijg/ts-stock-monitor
+ExecStart=/home/lijg/ts-stock-monitor/scripts/alert_push.sh
+TimeoutStartSec=300

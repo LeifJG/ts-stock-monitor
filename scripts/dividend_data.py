@@ -19,16 +19,8 @@ from datetime import datetime, timedelta
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "dividend_yields.json")
 
 # ─── 代理配置 ──────────────────────────────────────────────────
-# 在 WSL 中需要通过 Clash 代理访问 cninfo
-PROXY = os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY") or "http://192.168.124.11:7890"
-HTTPS_PROXY = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY") or PROXY
-
-def ensure_proxy_env():
-    """确保环境变量中有代理设置（供 requests/urllib3 使用）"""
-    if "http_proxy" not in os.environ:
-        os.environ["http_proxy"] = PROXY
-    if "https_proxy" not in os.environ:
-        os.environ["https_proxy"] = HTTPS_PROXY
+# P1-6: 动态探测 Clash（直连优先），统一走共享网络模块
+from net_utils import setup_proxy_env as ensure_proxy_env
 
 def get_cache() -> dict:
     """读取缓存，返回 {code: {dividend_per_share, updated_at, source}}"""

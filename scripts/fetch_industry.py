@@ -11,8 +11,9 @@ import sys
 import json
 import os
 
-os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
-os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
+from net_utils import setup_proxy_env
+
+setup_proxy_env()
 
 # ─── 行业映射表（覆盖A股主要股票）─────────────────────────────
 # 基于中证行业分类和主流分类标准

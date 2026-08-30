@@ -18,6 +18,11 @@ import math
 import logging
 from datetime import datetime, timedelta
 
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from net_utils import setup_proxy_env
+setup_proxy_env()
+
 import pandas as pd
 import akshare as ak
 

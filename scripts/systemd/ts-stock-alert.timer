@@ -1,0 +1,10 @@
+[Unit]
+Description=ts-stock-monitor 盘中预警定时器（交易日每10分钟，脚本内守卫交易时段）
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* *:0/10
+Persistent=false
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

@@ -22,8 +22,9 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from dividend_data import batch_fetch as batch_fetch_dividends, get_dividend_yield as calc_dividend_yield
 
-os.environ["HTTP_PROXY"] = os.environ.get("http_proxy", "http://192.168.124.11:7890")
-os.environ["HTTPS_PROXY"] = os.environ.get("https_proxy", "http://192.168.124.11:7890")
+from net_utils import setup_proxy_env
+
+setup_proxy_env()
 
 import urllib.request
 import urllib.parse

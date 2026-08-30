@@ -128,14 +128,43 @@ function readFinancialsCache(): Record<string, FinancialsEntry> | null {
 
 // ─── 代理配置 ──────────────────────────────────────────────────
 
-const PROXY = process.env.HTTP_PROXY || process.env.http_proxy || "http://192.168.124.11:7890";
-
 let _proxyAgent: any = null;
+let _proxyUrl: string | null | undefined;
+
+/**
+ * 动态解析 Clash 代理（P1-6：不再硬编码失效网关 IP）
+ * 优先级：环境变量 > 探测默认网关:7890 > 无
+ * 结果缓存（进程级），网关 IP 随 WSL 重启变化所以不能写死
+ */
+function resolveProxyUrl(): string | null {
+  if (_proxyUrl !== undefined) return _proxyUrl;
+  const envProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+  if (envProxy) {
+    _proxyUrl = envProxy;
+    return _proxyUrl;
+  }
+  try {
+    const { execSync } = require("child_process");
+    const out = execSync("ip route", { encoding: "utf-8", timeout: 3000 });
+    const gw = out
+      .split("\n")
+      .find((l: string) => l.startsWith("default"))
+      ?.trim()
+      .split(/\s+/)[2];
+    _proxyUrl = gw ? `http://${gw}:7890` : null;
+  } catch {
+    _proxyUrl = null;
+  }
+  return _proxyUrl;
+}
+
 function getProxyAgent() {
   if (!_proxyAgent) {
+    const proxy = resolveProxyUrl();
+    if (!proxy) return undefined;
     try {
       const mod = require("https-proxy-agent");
-      _proxyAgent = new mod.HttpsProxyAgent(PROXY);
+      _proxyAgent = new mod.HttpsProxyAgent(proxy);
     } catch {
       _proxyAgent = undefined;
     }

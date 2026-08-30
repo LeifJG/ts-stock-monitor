@@ -13,8 +13,9 @@ financials_data.py — 深度财务指标数据模块
 import os, json, sys
 from pathlib import Path
 
-os.environ["HTTP_PROXY"] = "http://192.168.124.11:7890"
-os.environ["HTTPS_PROXY"] = "http://192.168.124.11:7890"
+from net_utils import setup_proxy_env
+
+setup_proxy_env()
 import akshare as ak
 
 CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "financials_cache.json"
