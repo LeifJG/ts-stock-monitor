@@ -145,22 +145,41 @@ function getProxyAgent() {
 
 import fetch from "node-fetch";
 
+/**
+ * 智能请求：直连优先，失败/超时自动回退到 Clash 代理
+ * 直连超时 5s，代理超时 15s
+ */
 async function proxyFetch(url: string, init?: any, retries = 2): Promise<any> {
+  const DIRECT_TIMEOUT = 5000;
+  const PROXY_TIMEOUT = 15000;
+
+  // 第一步：尝试直连（5s 超时）
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT);
+    const res = await (fetch as any)(url, { ...init, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (directErr: any) {
+    // 直连失败，继续尝试代理
+  }
+
+  // 第二步：通过 Clash 代理重试
   const agent = getProxyAgent();
-  const opts = { ...init, agent };
+  if (!agent) {
+    throw new Error(`直连失败且无可用的 Clash 代理: ${url}`);
+  }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await (fetch as any)(url, opts);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT);
+      const res = await (fetch as any)(url, { ...init, agent, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
     } catch (err: any) {
       if (attempt === retries) throw err;
-      if (err?.message?.includes("ENOTFOUND") || err?.message?.includes("ETIMEDOUT")) {
-        // DNS 失败可能是代理路由问题，等 1s 重试
-        await new Promise((r) => setTimeout(r, 1000));
-      } else if (err?.message?.includes("hang up") || err?.message?.includes("ECONNRESET")) {
-        await new Promise((r) => setTimeout(r, 1000));
-      } else {
-        throw err; // 非网络错误不重试
-      }
+      await new Promise((r) => setTimeout(r, 1000));
     }
   }
 }
