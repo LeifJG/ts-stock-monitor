@@ -71,13 +71,13 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         minWidth: 180,
         borderRadius: 8,
         padding: "14px 16px",
-        background: "#1a1a1a",
-        border: "1px solid #333",
-        color: "#fff",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        color: "var(--text-primary)",
       }}
     >
       <Flex justify="space-between" align="center">
-        <span style={{ fontWeight: 500, fontSize: 14, color: "#fff" }}>
+        <span style={{ fontWeight: 500, fontSize: 14, color: "var(--text-primary)" }}>
           📦 组合收益
         </span>
         <span
@@ -86,7 +86,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
             padding: "1px 6px",
             borderRadius: 9999,
             background: isProfit ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)",
-            color: isProfit ? "#22c55e" : "#ef4444",
+            color: isProfit ? "var(--green)" : "var(--red)",
             fontWeight: 500,
           }}
         >
@@ -99,7 +99,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
           style={{
             fontSize: 22,
             fontWeight: 600,
-            color: isProfit ? "#22c55e" : "#ef4444",
+            color: isProfit ? "var(--green)" : "var(--red)",
             letterSpacing: "-0.48px",
           }}
         >
@@ -107,16 +107,16 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         </span>
       </div>
 
-      <Flex justify="space-between" style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #333" }}>
+      <Flex justify="space-between" style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-color)" }}>
         <div>
-          <div style={{ fontSize: 11, color: "#999" }}>投入</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "#fff" }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>投入</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
             {fmtMoney(totalInvested)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, color: "#999" }}>成本股息率</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: dividendYieldOnCost > 5 ? "#22c55e" : "#fff" }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>成本股息率</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: dividendYieldOnCost > 5 ? "var(--green)" : "var(--text-primary)" }}>
             {dividendYieldOnCost.toFixed(1)}%
           </div>
         </div>
@@ -124,14 +124,14 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
 
       <Flex justify="space-between" style={{ marginTop: 4 }}>
         <div>
-          <div style={{ fontSize: 11, color: "#999" }}>持股市值</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "#fff" }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>持股市值</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
             {fmtMoney(totalMarketValue)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, color: "#999" }}>年化分红</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "#f59e0b" }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>年化分红</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--gold)" }}>
             {annualDividendIncome >= 10000
               ? "¥" + (annualDividendIncome / 10000).toFixed(1) + "万"
               : "¥" + annualDividendIncome.toFixed(0)}
