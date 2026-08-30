@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { Position, DividendRecord, StockData } from "@/lib/types";
 import {
   normalizePositions,
@@ -50,6 +50,28 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+// ─── 服务端回灌（P0-2：防 localStorage 丢失）──────────────────
+// localStorage 为空（首次访问/清缓存/换浏览器）时，从服务端
+// portfolio.json 恢复持仓+分红记录。非空则不动（本地永远是真源）。
+
+async function restoreFromServer(setPositions: (p: Position[]) => void): Promise<void> {
+  try {
+    const res = await fetch("/api/portfolio");
+    if (!res.ok) return;
+    const json = await res.json();
+    const list = Array.isArray(json?.data) ? json.data : [];
+    if (!list.length) return;
+    // 竞态保护：等待期间用户已手动添加持仓 → 放弃回灌
+    if (localStorage.getItem(STORAGE_KEY)) return;
+    const cleaned = normalizePositions(list);
+    if (!cleaned.length) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+    setPositions(cleaned);
+  } catch {
+    // 服务端不可用时静默，不影响本地使用
+  }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────
 
 /**
@@ -59,6 +81,16 @@ function genId(): string {
  */
 export function usePortfolio(externalMap?: Map<string, StockData>) {
   const [positions, setPositions] = useState<Position[]>(loadPositions);
+
+  // 挂载时 localStorage 为空 → 从服务端回灌（每页面加载最多尝试一次）
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (typeof window !== "undefined" && !localStorage.getItem(STORAGE_KEY)) {
+      restoreFromServer(setPositions);
+    }
+  }, []);
 
   const persist = useCallback((fn: (prev: Position[]) => Position[]) => {
     setPositions((prev) => {
