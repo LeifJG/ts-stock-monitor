@@ -14,6 +14,7 @@ import { useInsiderData } from "@/hooks/useInsiderData";
 import { useDividendHistory } from "@/hooks/useDividendHistory";
 import { useAlertSync } from "@/hooks/useAlertSync";
 import { useValuationData } from "@/hooks/useValuationData";
+import { useFxRate } from "@/hooks/useFxRate";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
@@ -41,6 +42,7 @@ import { DEFAULT_WATCHLIST, DEFAULT_REFRESH_INTERVAL } from "@/lib/constants";
 import type { StockCode, StockData, IndexData, ViewMode } from "@/lib/types";
 
 export default function Home() {
+  useFxRate(); // P1-5：注入实时港币汇率（静默失败回退 0.86）
   const [watchlist, setWatchlist] = useLocalStorage<StockCode[]>("ts-stock-monitor:watchlist", DEFAULT_WATCHLIST);
   const [newCode, setNewCode] = useLocalStorage("ts-stock-monitor:newCode", "");
   const [refreshInterval, setRefreshInterval] = useLocalStorage("ts-stock-monitor:refreshInterval", DEFAULT_REFRESH_INTERVAL);

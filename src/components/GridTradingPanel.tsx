@@ -621,12 +621,14 @@ function GridSummaryHeader({ plans }: { plans: GridPlan[] }) {
       style={{
         marginBottom: 12,
         boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)",
-        background: "#faf5ff", borderLeft: "3px solid #8b5cf6",
+        // P2-7: 主题变量化（深浅色模式自适应），原硬编码 #faf5ff/#8b5cf6
+        background: "var(--accent-bg)",
+        borderLeft: "3px solid var(--accent-color)",
       }}
     >
       <Flex align="center" justify="space-between" wrap="wrap" gap={12}>
         <Flex align="center" gap={8}>
-          <LineChartOutlined style={{ fontSize: 18, color: "#8b5cf6" }} />
+          <LineChartOutlined style={{ fontSize: 18, color: "var(--accent-color)" }} />
           <Text strong style={{ fontSize: 15 }}>网格交易总览</Text>
           <Tag color="purple" style={{ fontSize: 10, lineHeight: "16px" }}>
             {plans.length} 只

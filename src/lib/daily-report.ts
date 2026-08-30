@@ -20,6 +20,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fetchFullStockData } from "@/lib/stock-api";
+import { setHkdRate } from "@/lib/stockUtils";
 import {
   normalizePositions,
   calcPositionMetrics,
@@ -138,6 +139,14 @@ export function isReportFresh(): boolean {
 export async function generateDailyReport(force = false): Promise<{ content: string; generatedAt: string }> {
   if (!force && isReportFresh()) {
     return { content: fs.readFileSync(REPORT_FILE, "utf-8"), generatedAt: fs.statSync(REPORT_FILE).mtime.toISOString() };
+  }
+
+  // 0) 注入实时港币汇率（P1-5：缓存缺失时沿用默认 0.86）
+  try {
+    const fx = JSON.parse(fs.readFileSync(path.join(process.cwd(), "cache", "fx_rate.json"), "utf-8"));
+    if (typeof fx?.rate === "number") setHkdRate(fx.rate);
+  } catch {
+    /* 沿用默认 */
   }
 
   // 1) 持仓（归一化 + 坏数据过滤，与页面同源同口径）

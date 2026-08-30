@@ -37,12 +37,24 @@ FALLBACK_DATA = {
 
 
 def fetch_pe_data(code: str) -> list[dict] | None:
-    """从 CSIndex 获取历史 PE 数据"""
+    """从 CSIndex 获取历史 PE 数据（P2-8：3 次重试，指数偶发拉取失败不再缺项）"""
+    import time
+    import akshare as ak
+    import pandas as pd
+
+    df = None
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            df = ak.stock_zh_index_hist_csindex(symbol=code)
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(2 * (attempt + 1))
     try:
-        import akshare as ak
-        import pandas as pd
-        df = ak.stock_zh_index_hist_csindex(symbol=code)
         if df is None or df.empty:
+            if last_err:
+                log.warning(f"  {code} fetch failed after 3 attempts: {last_err}")
             return None
         if "滚动市盈率" not in df.columns or "日期" not in df.columns:
             return None
