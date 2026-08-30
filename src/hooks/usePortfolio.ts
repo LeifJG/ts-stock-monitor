@@ -113,6 +113,7 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
       const stockCode = pos.stockCode || pos.code;
       const totalCost = pos.totalCost || pos.cost;
       const buyPrice = pos.buyPrice || pos.price;
+      const posId = pos.id || `${stockCode}_${pos.shares}`;
       
       const stockData = stockDataMap.get(stockCode);
       const currentPrice = stockData?.quote.currentPrice ?? buyPrice;
@@ -123,7 +124,7 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
 
       // 所有金额都转换成人民币
       const marketValue = pos.shares * currentPrice * exchangeRate;
-      const totalDividends = pos.dividends.reduce((sum, d) => sum + d.total, 0) * exchangeRate;
+      const totalDividends = (pos.dividends || []).reduce((sum, d) => sum + d.total, 0) * exchangeRate;
       const totalCostCny = totalCost * exchangeRate;
       const realCost = totalCostCny - totalDividends;
       const totalProfit = marketValue + totalDividends - totalCostCny;
@@ -136,7 +137,7 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
         costYield = (annualDps / realCostPerShare) * 100;
       }
 
-      m.set(pos.id, {
+      m.set(posId, {
         currentPrice: currentPrice * exchangeRate,
         marketValue: Math.round(marketValue * 100) / 100,
         totalProfit: Math.round(totalProfit * 100) / 100,
@@ -165,7 +166,8 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
     let totalDividends = 0;
 
     for (const pos of positions) {
-      const m = metrics.get(pos.id);
+      const posId = pos.id || `${pos.stockCode || pos.code}_${pos.shares}`;
+      const m = metrics.get(posId);
       // 兼容两种字段名格式
       const totalCost = pos.totalCost || pos.cost;
       const stockCode = pos.stockCode || pos.code;
