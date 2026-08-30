@@ -6,8 +6,7 @@
 venv/
 env/
 # 运行时生成的缓存（日报/估值/波动率），不进仓库
-cache/latest_report.md
-cache/index_valuations.json
+cache/
 # misc
 # next.js
 # production
