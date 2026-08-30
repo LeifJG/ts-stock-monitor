@@ -25,10 +25,14 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
   // Compute annual dividend income with exchange rate
   let annualDividendIncome = 0;
   for (const pos of positions) {
-    const sd = stockDataMap.get(pos.stockCode);
+    // 兼容两种字段名格式
+    const stockCode = pos.stockCode || pos.code;
+    const buyPrice = pos.buyPrice || pos.price;
+    
+    const sd = stockDataMap.get(stockCode);
     const yield_ = sd?.fundamentals.dividendYield;
-    const currentPrice = sd?.quote.currentPrice ?? pos.buyPrice;
-    const exchangeRate = getExchangeRate(pos.stockCode);
+    const currentPrice = sd?.quote.currentPrice ?? buyPrice;
+    const exchangeRate = getExchangeRate(stockCode);
     const marketValue = pos.shares * currentPrice * exchangeRate;
     if (yield_ != null && yield_ > 0) {
       annualDividendIncome += marketValue * (yield_ / 100);

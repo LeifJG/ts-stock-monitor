@@ -109,17 +109,22 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
     const m = new Map<string, PositionMetrics>();
 
     for (const pos of positions) {
-      const stockData = stockDataMap.get(pos.stockCode);
-      const currentPrice = stockData?.quote.currentPrice ?? pos.buyPrice;
+      // 兼容两种字段名格式
+      const stockCode = pos.stockCode || pos.code;
+      const totalCost = pos.totalCost || pos.cost;
+      const buyPrice = pos.buyPrice || pos.price;
+      
+      const stockData = stockDataMap.get(stockCode);
+      const currentPrice = stockData?.quote.currentPrice ?? buyPrice;
       const dividendYield = stockData?.fundamentals.dividendYield;
 
       // 使用统一的汇率工具函数
-      const exchangeRate = getExchangeRate(pos.stockCode);
+      const exchangeRate = getExchangeRate(stockCode);
 
       // 所有金额都转换成人民币
       const marketValue = pos.shares * currentPrice * exchangeRate;
       const totalDividends = pos.dividends.reduce((sum, d) => sum + d.total, 0) * exchangeRate;
-      const totalCostCny = pos.totalCost * exchangeRate;
+      const totalCostCny = totalCost * exchangeRate;
       const realCost = totalCostCny - totalDividends;
       const totalProfit = marketValue + totalDividends - totalCostCny;
 
@@ -161,9 +166,13 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
 
     for (const pos of positions) {
       const m = metrics.get(pos.id);
+      // 兼容两种字段名格式
+      const totalCost = pos.totalCost || pos.cost;
+      const stockCode = pos.stockCode || pos.code;
+      
       // 港股的投入成本也需要转换成人民币
-      const exchangeRate = getExchangeRate(pos.stockCode);
-      totalInvested += pos.totalCost * exchangeRate;
+      const exchangeRate = getExchangeRate(stockCode);
+      totalInvested += totalCost * exchangeRate;
       if (m) {
         totalMarketValue += m.marketValue;
         totalDividends += m.totalDividends;
