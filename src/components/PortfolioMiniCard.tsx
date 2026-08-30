@@ -7,6 +7,7 @@ import {
 import type { StockData } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { getExchangeRate } from "@/lib/stockUtils";
+import { useState, useEffect } from "react";
 
 interface PortfolioMiniCardProps {
   stockDataMap: Map<string, StockData>;
@@ -20,30 +21,59 @@ const fmtMoney = (v: number): string => {
 export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardProps) {
   const { summary, positions } = usePortfolio(stockDataMap);
 
-  if (positions.length === 0) return null;
+  // 如果 localStorage 没数据，从服务端加载
+  const [serverPositions, setServerPositions] = useState<any[]>([]);
+  useEffect(() => {
+    if (positions.length === 0) {
+      fetch('/api/portfolio')
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && Array.isArray(res.data)) {
+            setServerPositions(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [positions.length]);
 
-  // Compute annual dividend income with exchange rate
+  // 决定使用哪组数据
+  const effectivePositions = positions.length > 0 ? positions : serverPositions;
+
+  if (effectivePositions.length === 0) return null;
+
+  // 直接从持仓数据计算，不依赖 summary
+  let totalInvested = 0;
+  let totalMarketValue = 0;
+  let totalDividends = 0;
   let annualDividendIncome = 0;
-  for (const pos of positions) {
-    // 兼容两种字段名格式
+
+  for (const pos of effectivePositions) {
     const stockCode = pos.stockCode || pos.code;
+    const totalCost = pos.totalCost || pos.cost;
     const buyPrice = pos.buyPrice || pos.price;
     
     const sd = stockDataMap.get(stockCode);
     const yield_ = sd?.fundamentals.dividendYield;
     const currentPrice = sd?.quote.currentPrice ?? buyPrice;
     const exchangeRate = getExchangeRate(stockCode);
-    const marketValue = pos.shares * currentPrice * exchangeRate;
+    
+    const invested = totalCost * pos.shares * exchangeRate;
+    const marketValue = currentPrice * pos.shares * exchangeRate;
+    const dividends = (pos.dividends || []).reduce((s: number, d: any) => s + d.total, 0) * exchangeRate;
+    
+    totalInvested += invested;
+    totalMarketValue += marketValue;
+    totalDividends += dividends;
+    
     if (yield_ != null && yield_ > 0) {
       annualDividendIncome += marketValue * (yield_ / 100);
     }
   }
 
-  const dividendYieldOnCost = summary.totalInvested > 0
-    ? (annualDividendIncome / summary.totalInvested) * 100
-    : 0;
-
-  const isProfit = summary.totalProfit >= 0;
+  const totalProfit = totalMarketValue + totalDividends - totalInvested;
+  const totalProfitPct = totalInvested > 0 ? (totalProfit / totalInvested) * 100 : 0;
+  const dividendYieldOnCost = totalInvested > 0 ? (annualDividendIncome / totalInvested) * 100 : 0;
+  const isProfit = totalProfit >= 0;
 
   return (
     <div
@@ -72,7 +102,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
             fontWeight: 500,
           }}
         >
-          {isProfit ? "+" : ""}{summary.totalProfitPct.toFixed(2)}%
+          {isProfit ? "+" : ""}{totalProfitPct.toFixed(2)}%
         </span>
       </Flex>
 
@@ -86,7 +116,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
             letterSpacing: "-0.48px",
           }}
         >
-          {fmtMoney(Math.abs(summary.totalProfit))}
+          {fmtMoney(Math.abs(totalProfit))}
         </span>
       </div>
 
@@ -95,7 +125,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         <div>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>投入</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
-            {fmtMoney(summary.totalInvested)}
+            {fmtMoney(totalInvested)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -110,7 +140,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         <div>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>持股市值</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
-            {fmtMoney(summary.totalMarketValue)}
+            {fmtMoney(totalMarketValue)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
