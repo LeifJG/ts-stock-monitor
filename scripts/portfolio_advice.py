@@ -195,12 +195,32 @@ def analyze_position(pos: dict, quote: dict) -> dict:
             pass
 
     # ── 策略 1: 网格交易建议 ──────────────────────────
-    # 确保 buy_price 不为 0 才能计算波动率
-    if buy_price > 0:
-        grid_volatility = max(abs(current_price - buy_price) / buy_price * 100, 3)
+    # 步长优先级: data/volatility_cache.json 真实波动率(20日σ×2) > 旧盈亏推导(废弃保留兜底)
+    # 与 src/lib/grid-engine.ts、/api/volatility 保持同一口径
+    vol_step = None
+    vol_sigma = None
+    try:
+        vol_cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "volatility_cache.json")
+        if os.path.exists(vol_cache_path):
+            with open(vol_cache_path, "r", encoding="utf-8") as f:
+                vol_items = json.load(f).get("items", {})
+            v = vol_items.get(code)
+            if v and v.get("step"):
+                vol_step = float(v["step"])
+                vol_sigma = float(v.get("sigma") or (vol_step * 2))
+    except Exception:
+        pass
+
+    if vol_step is not None:
+        grid_step = vol_step
+        grid_volatility = vol_sigma
     else:
-        grid_volatility = 3
-    grid_step = max(round(grid_volatility * 0.5, 1), 2)  # 网格步长
+        # 兜底: 旧算法（真实波动率数据不可用时）
+        if buy_price > 0:
+            grid_volatility = max(abs(current_price - buy_price) / buy_price * 100, 3)
+        else:
+            grid_volatility = 3
+        grid_step = max(round(grid_volatility * 0.5, 1), 2)
 
     grid_levels = []
     # 向下网格（买入区）

@@ -65,16 +65,21 @@ export function computeGridPlan(
   position: Position,
   stockData: StockData | undefined,
   settings?: Partial<GridSettings>,
+  historicalStep?: number,   // 真实历史波动率步长（来自 /api/volatility）
 ): GridPlan {
   const s: GridSettings = { ...DEFAULT_GRID_SETTINGS, ...settings };
 
-  const currentPrice = stockData?.quote.currentPrice ?? position.buyPrice;
-  const buyPrice = position.buyPrice;
+  const stockCode = position.stockCode ?? "";
+  const stockName = stockData?.quote.name ?? position.stockName ?? stockCode;
+  const buyPrice = position.buyPrice ?? 0;
+  const currentPrice = stockData?.quote.currentPrice ?? buyPrice;
   const totalShares = position.shares;
 
-  // 波动率 & 步长
-  const volatility = estimateVolatility(currentPrice, buyPrice);
-  const stepPct = s.stepPct > 0 ? s.stepPct : suggestGridStep(volatility);
+  // 步长优先级: 用户手动设置 > 真实历史波动率(20日σ×2) > 中性默认 3%
+  // （旧算法用 |现价-成本|/成本 当波动率，把盈利幅度误当波动，已废弃）
+  const stepPct =
+    s.stepPct > 0 ? s.stepPct : historicalStep && historicalStep > 0 ? historicalStep : 3;
+  const volatility = historicalStep ? historicalStep * 2 : estimateVolatility(currentPrice, buyPrice);
   const buyCount = Math.max(1, Math.min(s.buyCount, 8));
   const sellCount = Math.max(1, Math.min(s.sellCount, 6));
 
@@ -161,8 +166,8 @@ export function computeGridPlan(
     : 0;
 
   return {
-    stockCode: position.stockCode,
-    stockName: stockData?.quote.name ?? position.stockName,
+    stockCode,
+    stockName,
     currentPrice,
     buyPrice,
     volatility: parseFloat(volatility.toFixed(1)),
@@ -185,13 +190,14 @@ export function computeAllGridPlans(
   positions: Position[],
   stockDataMap: Map<string, StockData>,
   settings?: Partial<GridSettings>,
+  historicalSteps?: Map<string, number>,
 ): GridPlan[] {
   return positions
     .filter((p) => {
-      const sd = stockDataMap.get(p.stockCode);
+      const sd = stockDataMap.get(p.stockCode ?? "");
       return sd?.quote.currentPrice != null;
     })
-    .map((p) => computeGridPlan(p, stockDataMap.get(p.stockCode), settings));
+    .map((p) => computeGridPlan(p, stockDataMap.get(p.stockCode ?? ""), settings, historicalSteps?.get(p.stockCode ?? "")));
 }
 
 // ─── 网格告警规则生成 ──────────────────────────────────────────

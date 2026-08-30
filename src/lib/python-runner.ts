@@ -4,7 +4,10 @@
 // 所有调用 Python 脚本的 API route 都应使用本模块，避免重复逻辑
 // ============================================================
 
-import { execSync } from "child_process";
+import { execSync, exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 import * as path from "path";
 import * as fs from "fs";
 
@@ -58,4 +61,33 @@ export function runPythonScript(
     timeout: options.timeout ?? 20000,
     env,
   });
+}
+
+/**
+ * 异步运行 scripts/ 下的 Python 脚本（长任务用，不阻塞事件循环）
+ * 供拉取多只股票K线等耗时场景（如 fetch_volatility.py）
+ */
+export async function runPythonScriptAsync(
+  scriptName: string,
+  args: string[] = [],
+  options: { timeout?: number; env?: NodeJS.ProcessEnv } = {}
+): Promise<string> {
+  const scriptPath = path.join(process.cwd(), "scripts", scriptName);
+  const cmdParts = [resolvePythonBin(), scriptPath, ...args].map(quoteArg);
+  const cmd = cmdParts.join(" ");
+
+  const env = {
+    ...process.env,
+    http_proxy: process.env.http_proxy || DEFAULT_PROXY,
+    https_proxy: process.env.https_proxy || DEFAULT_PROXY,
+    ...options.env,
+  };
+
+  const { stdout } = await execAsync(cmd, {
+    encoding: "utf-8",
+    timeout: options.timeout ?? 120000,
+    maxBuffer: 10 * 1024 * 1024,
+    env,
+  });
+  return stdout;
 }

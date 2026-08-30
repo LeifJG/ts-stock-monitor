@@ -27,6 +27,7 @@ import {
   generateGridAlerts, estimateVolatility, suggestGridStep,
   STRATEGY_LABELS, STRATEGY_DESCRIPTIONS,
 } from "@/lib/grid-engine";
+import { useVolatility } from "@/hooks/useVolatility";
 
 const { Text, Title } = Typography;
 
@@ -666,8 +667,10 @@ function GridSummaryHeader({ plans }: { plans: GridPlan[] }) {
 // ─── 主面板 ──────────────────────────────────────────────────
 
 export default function GridTradingPanel({ stockDataMap }: GridTradingPanelProps) {
-  const { positions } = usePortfolio(stockDataMap);
+  // usePortfolio 返回合并后的行情（含 watchlist 外的持仓股/港股），网格覆盖全部持仓
+  const { positions, stockDataMap: combinedMap } = usePortfolio(stockDataMap);
   const { rules } = useAlerts();
+  const { steps: volatilitySteps } = useVolatility();
 
   // 从 localStorage 读取所有自定义设置
   const allSettings = useMemo(() => loadAllStockSettings(), []);
@@ -678,14 +681,14 @@ export default function GridTradingPanel({ stockDataMap }: GridTradingPanelProps
   const plans = useMemo(() => {
     return positions
       .filter((p) => {
-        const sd = stockDataMap.get(p.stockCode);
+        const sd = combinedMap.get(p.stockCode);
         return sd?.quote.currentPrice != null;
       })
       .map((p) => {
         const custom = allSettings[p.stockCode];
-        return computeGridPlan(p, stockDataMap.get(p.stockCode), custom);
+        return computeGridPlan(p, combinedMap.get(p.stockCode ?? ""), custom, volatilitySteps.get(p.stockCode ?? ""));
       });
-  }, [positions, stockDataMap, refreshKey]);
+  }, [positions, combinedMap, refreshKey, volatilitySteps]);
 
   // 已有告警价格集合（去重）
   const existingAlertPrices = useMemo(() => {
