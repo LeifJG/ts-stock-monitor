@@ -26,6 +26,7 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
   let annualDividendIncome = 0;
   for (const pos of positions) {
     const stockCode = pos.stockCode || pos.code;
+    const totalCost = pos.totalCost || pos.cost;
     const sd = stockDataMap.get(stockCode);
     const yield_ = sd?.fundamentals.dividendYield;
     const currentPrice = sd?.quote.currentPrice ?? pos.buyPrice ?? pos.price;
