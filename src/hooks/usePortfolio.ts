@@ -1,22 +1,38 @@
 // ============================================================
 // usePortfolio.ts — 持仓管理 hook（localStorage 持久化）
+// ------------------------------------------------------------
+// 计算逻辑统一走 src/lib/portfolio-calc.ts（唯一口径）；
+// 实时行情自动合并（含 watchlist 之外的港股，走共享缓存）。
 // ============================================================
 
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import type { Position, DividendRecord, PositionMetrics, StockData } from "@/lib/types";
-import { getExchangeRate, HKD_TO_CNY } from "@/lib/stockUtils";
+import type { Position, DividendRecord, StockData } from "@/lib/types";
+import {
+  normalizePositions,
+  calcPositionMetrics,
+  calcPortfolioSummary,
+} from "@/lib/portfolio-calc";
+import { usePortfolioStocks } from "./usePortfolioStocks";
 
 const STORAGE_KEY = "ts-stock-monitor:portfolio";
 
-// ─── 工具函数 ─────────────────────────────────────────────────
+// ─── 持久化 ───────────────────────────────────────────────────
 
 function loadPositions(): Position[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    // 读取即清洗：归一化字段 + 过滤坏数据（无代码/0股/无成本），并回写修复
+    const cleaned = normalizePositions(JSON.parse(raw));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+    } catch {
+      // 回写失败不影响使用
+    }
+    return cleaned;
   } catch {
     return [];
   }
@@ -36,7 +52,12 @@ function genId(): string {
 
 // ─── Hook ─────────────────────────────────────────────────────
 
-export function usePortfolio(stockDataMap: Map<string, StockData>) {
+/**
+ * @param externalMap 页面级行情（watchlist 内股票），可缺省——
+ *                    持仓里不在 watchlist 的股票（港股等）会自动通过
+ *                    usePortfolioStocks 拉取并合并
+ */
+export function usePortfolio(externalMap?: Map<string, StockData>) {
   const [positions, setPositions] = useState<Position[]>(loadPositions);
 
   const persist = useCallback((fn: (prev: Position[]) => Position[]) => {
@@ -47,13 +68,29 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
     });
   }, []);
 
+  // ── 实时行情合并（共享缓存，多组件只发一次请求） ──────────
+  const quoteCodes = useMemo(
+    () =>
+      positions
+        .map((p) => (p.stockCode || p.code || "").toString())
+        .filter((c) => c && !(externalMap?.has(c) && externalMap.get(c)?.quote?.currentPrice != null)),
+    [positions, externalMap]
+  );
+  const quoteMap = usePortfolioStocks(quoteCodes);
+
+  const stockDataMap = useMemo(() => {
+    const merged = new Map<string, StockData>(externalMap ?? []);
+    quoteMap.forEach((v, k) => merged.set(k, v));
+    return merged;
+  }, [externalMap, quoteMap]);
+
   // ── CRUD ──────────────────────────────────────────────
 
   const addPosition = useCallback(
-    (p: Omit<Position, "id" | "dividends">) => {
+    (p: Omit<Position, "id">) => {
       persist((prev) => [
         ...prev,
-        { ...p, id: genId(), dividends: [] },
+        { ...p, id: genId(), dividends: Array.isArray(p.dividends) ? p.dividends : [] },
       ]);
     },
     [persist]
@@ -82,7 +119,7 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
       persist((prev) =>
         prev.map((p) =>
           p.id === positionId
-            ? { ...p, dividends: [...p.dividends, { ...d, id: genId() }] }
+            ? { ...p, dividends: [...(p.dividends || []), { ...d, id: genId() }] }
             : p
         )
       );
@@ -95,7 +132,7 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
       persist((prev) =>
         prev.map((p) =>
           p.id === positionId
-            ? { ...p, dividends: p.dividends.filter((d) => d.id !== dividendId) }
+            ? { ...p, dividends: (p.dividends || []).filter((d) => d.id !== dividendId) }
             : p
         )
       );
@@ -103,102 +140,30 @@ export function usePortfolio(stockDataMap: Map<string, StockData>) {
     [persist]
   );
 
-  // ── 计算指标 ──────────────────────────────────────────
+  // ── 计算指标（统一走 portfolio-calc，唯一口径） ──────────
+
+  // normalized：字段必填（stockCode/totalCost/buyPrice/dividends），
+  // 下游组件（表格/环形图/卡片）一律使用它，天然免疫格式差异和坏数据
+  const normalized = useMemo(() => normalizePositions(positions), [positions]);
 
   const metrics = useMemo(() => {
-    const m = new Map<string, PositionMetrics>();
-
-    for (const pos of positions) {
-      // 兼容两种字段名格式
-      const stockCode = pos.stockCode || pos.code;
-      const totalCost = pos.totalCost || pos.cost;
-      const buyPrice = pos.buyPrice || pos.price;
-      const posId = pos.id || `${stockCode}_${pos.shares}`;
-      
-      const stockData = stockDataMap.get(stockCode);
-      const currentPrice = stockData?.quote.currentPrice ?? buyPrice;
-      const dividendYield = stockData?.fundamentals.dividendYield;
-
-      // 使用统一的汇率工具函数
-      const exchangeRate = getExchangeRate(stockCode);
-
-      // 所有金额都转换成人民币
-      const marketValue = pos.shares * currentPrice * exchangeRate;
-      const totalDividends = (pos.dividends || []).reduce((sum, d) => sum + d.total, 0) * exchangeRate;
-      const totalCostCny = totalCost * exchangeRate;
-      const realCost = totalCostCny - totalDividends;
-      const totalProfit = marketValue + totalDividends - totalCostCny;
-
-      // 成本股息率：最新年化每股分红 / 每股真实成本
-      let costYield = 0;
-      if (dividendYield != null && dividendYield > 0 && realCost > 0) {
-        const annualDps = (dividendYield / 100) * currentPrice * exchangeRate;
-        const realCostPerShare = realCost / pos.shares;
-        costYield = (annualDps / realCostPerShare) * 100;
-      }
-
-      m.set(posId, {
-        currentPrice: currentPrice * exchangeRate,
-        marketValue: Math.round(marketValue * 100) / 100,
-        totalProfit: Math.round(totalProfit * 100) / 100,
-        totalProfitPct:
-          totalCostCny > 0
-            ? Math.round((totalProfit / totalCostCny) * 10000) / 100
-            : 0,
-        totalDividends: Math.round(totalDividends * 100) / 100,
-        realCost: Math.round(realCost * 100) / 100,
-        realCostPerShare:
-          pos.shares > 0
-            ? Math.round((realCost / pos.shares) * 100) / 100
-            : 0,
-        costYield: Math.round(costYield * 100) / 100,
-      });
+    const m = new Map<string, ReturnType<typeof calcPositionMetrics>>();
+    for (const pos of normalized) {
+      m.set(pos.id, calcPositionMetrics(pos, stockDataMap.get(pos.stockCode)));
     }
-
     return m;
-  }, [positions, stockDataMap]);
+  }, [normalized, stockDataMap]);
 
-  // ── 汇总 ──────────────────────────────────────────────
-
-  const summary = useMemo(() => {
-    let totalInvested = 0;
-    let totalMarketValue = 0;
-    let totalDividends = 0;
-
-    for (const pos of positions) {
-      const posId = pos.id || `${pos.stockCode || pos.code}_${pos.shares}`;
-      const m = metrics.get(posId);
-      // 兼容两种字段名格式
-      const totalCost = pos.totalCost || pos.cost;
-      const stockCode = pos.stockCode || pos.code;
-      
-      // 港股的投入成本也需要转换成人民币
-      const exchangeRate = getExchangeRate(stockCode);
-      totalInvested += totalCost * exchangeRate;
-      if (m) {
-        totalMarketValue += m.marketValue;
-        totalDividends += m.totalDividends;
-      }
-    }
-
-    const totalProfit = totalMarketValue + totalDividends - totalInvested;
-    return {
-      totalInvested: Math.round(totalInvested * 100) / 100,
-      totalMarketValue: Math.round(totalMarketValue * 100) / 100,
-      totalDividends: Math.round(totalDividends * 100) / 100,
-      totalProfit: Math.round(totalProfit * 100) / 100,
-      totalProfitPct:
-        totalInvested > 0
-          ? Math.round((totalProfit / totalInvested) * 10000) / 100
-          : 0,
-      positionCount: positions.length,
-    };
-  }, [positions, metrics]);
+  const summary = useMemo(
+    () => calcPortfolioSummary(normalized, stockDataMap),
+    [normalized, stockDataMap]
+  );
 
   return {
-    positions,
+    positions: normalized,
     metrics,
     summary,
+    stockDataMap,
     addPosition,
     removePosition,
     updatePosition,

@@ -1,9 +1,16 @@
+// ============================================================
+// PortfolioMiniCard.tsx — 首页顶部「组合收益」小卡片
+// ------------------------------------------------------------
+// 数据源与组合面板完全一致：usePortfolio（localStorage）
+// + 实时行情自动合并（含港股），计算统一走 portfolio-calc，
+// 保证与「组合收益总览」数字强关联、永不打架。
+// ============================================================
+
 "use client";
 
-import { useState, useEffect } from "react";
 import { Flex } from "antd";
 import type { StockData } from "@/lib/types";
-import { getExchangeRate } from "@/lib/stockUtils";
+import { usePortfolio } from "@/hooks/usePortfolio";
 
 interface PortfolioMiniCardProps {
   stockDataMap: Map<string, StockData>;
@@ -15,52 +22,12 @@ const fmtMoney = (v: number): string => {
 };
 
 export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardProps) {
-  const [positions, setPositions] = useState<any[]>([]);
+  const { summary } = usePortfolio(stockDataMap);
 
-  useEffect(() => {
-    fetch("/api/portfolio")
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && Array.isArray(data.data)) {
-          setPositions(data.data);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  if (summary.positionCount === 0) return null;
 
-  if (positions.length === 0) return null;
-
-  let totalInvested = 0;
-  let totalMarketValue = 0;
-  let totalProfit = 0;
-  let annualDividendIncome = 0;
-
-  for (const pos of positions) {
-    const stockCode = pos.code || pos.stockCode;
-    const cost = pos.cost || pos.totalCost;
-    const price = pos.price || pos.buyPrice;
-    const shares = pos.shares || 0;
-
-    const exchangeRate = getExchangeRate(stockCode);
-    const sd = stockDataMap.get(stockCode);
-    const currentPrice = sd?.quote.currentPrice ?? price;
-    const dividendYield = sd?.fundamentals.dividendYield;
-
-    const invested = shares * cost * exchangeRate;
-    const marketValue = shares * currentPrice * exchangeRate;
-    const profit = marketValue - invested;
-
-    totalInvested += invested;
-    totalMarketValue += marketValue;
-    totalProfit += profit;
-
-    if (dividendYield != null && dividendYield > 0) {
-      annualDividendIncome += marketValue * (dividendYield / 100);
-    }
-  }
-
-  const totalProfitPct = totalInvested > 0 ? (totalProfit / totalInvested) * 100 : 0;
-  const dividendYieldOnCost = totalInvested > 0 ? (annualDividendIncome / totalInvested) * 100 : 0;
+  const totalProfit = summary.totalProfit;
+  const totalProfitPct = summary.totalProfitPct;
   const isProfit = totalProfit >= 0;
 
   return (
@@ -111,13 +78,13 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         <div>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>投入</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
-            {fmtMoney(totalInvested)}
+            {fmtMoney(summary.totalInvested)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>成本股息率</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: dividendYieldOnCost > 5 ? "var(--green)" : "var(--text-primary)" }}>
-            {dividendYieldOnCost.toFixed(1)}%
+          <div style={{ fontSize: 14, fontWeight: 500, color: summary.dividendYieldOnCost > 5 ? "var(--green)" : "var(--text-primary)" }}>
+            {summary.dividendYieldOnCost.toFixed(1)}%
           </div>
         </div>
       </Flex>
@@ -126,15 +93,15 @@ export default function PortfolioMiniCard({ stockDataMap }: PortfolioMiniCardPro
         <div>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>持股市值</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
-            {fmtMoney(totalMarketValue)}
+            {fmtMoney(summary.totalMarketValue)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>年化分红</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--gold)" }}>
-            {annualDividendIncome >= 10000
-              ? "¥" + (annualDividendIncome / 10000).toFixed(1) + "万"
-              : "¥" + annualDividendIncome.toFixed(0)}
+            {summary.annualDividendIncome >= 10000
+              ? "¥" + (summary.annualDividendIncome / 10000).toFixed(1) + "万"
+              : "¥" + summary.annualDividendIncome.toFixed(0)}
           </div>
         </div>
       </Flex>

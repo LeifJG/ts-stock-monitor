@@ -4,14 +4,14 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
 import { Card, Flex, Typography, Statistic, Row, Col, Empty, Tooltip } from "antd";
 import {
   WalletOutlined, RiseOutlined, GiftOutlined, FundOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
-import type { StockData, Position } from "@/lib/types";
 import { usePortfolio } from "@/hooks/usePortfolio";
+import { calcMarketValue } from "@/lib/stockUtils";
+import type { StockData } from "@/lib/types";
 
 const { Text } = Typography;
 
@@ -25,78 +25,26 @@ interface PortfolioSummaryProps {
   stockDataMap: Map<string, StockData>;
 }
 
-export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps) {
-  // 获取持仓股票的实时数据（解决港股不在 watchlist 里的问题）
-  const [portfolioStocks, setPortfolioStocks] = useState<Map<string, StockData>>(new Map());
-  
-  useEffect(() => {
-    const fetchPortfolioStocks = async () => {
-      const stored = localStorage.getItem("ts-stock-monitor:portfolio");
-      if (!stored) return;
-      
-      try {
-        const positions = JSON.parse(stored);
-        const codes = positions.map((p: Position) => p.stockCode).filter(Boolean);
-        if (codes.length === 0) return;
-        
-        const res = await fetch(`/api/stocks?codes=${codes.join(",")}`);
-        const json = await res.json();
-        
-        if (json.success && json.data) {
-          const map = new Map<string, StockData>();
-          json.data.forEach((s: StockData) => map.set(s.quote.code, s));
-          setPortfolioStocks(map);
-        }
-      } catch (err) {
-        console.error("获取持仓数据失败:", err);
-      }
-    };
-    
-    fetchPortfolioStocks();
-    const timer = setInterval(fetchPortfolioStocks, 60000);
-    return () => clearInterval(timer);
-  }, []);
-  
-  // 合并 stockDataMap 和 portfolioStocks
-  const combinedStockDataMap = useMemo(() => {
-    const merged = new Map(stockDataMap);
-    portfolioStocks.forEach((v, k) => merged.set(k, v));
-    return merged;
-  }, [stockDataMap, portfolioStocks]);
-  
-  const { positions, metrics, summary } = usePortfolio(combinedStockDataMap);
+export default function PortfolioSummary({ stockDataMap: externalMap }: PortfolioSummaryProps) {
+  // usePortfolio 内部自动合并持仓实时行情（含 watchlist 外的港股）
+  const { positions, metrics, summary, stockDataMap: combinedStockDataMap } = usePortfolio(externalMap);
 
   if (positions.length === 0) {
     return null; // 无持仓不显示
   }
 
-  // 计算年化分红收入（基于当前股息率和持仓）
-  const HKD_TO_CNY = 0.86;
-  let annualDividendIncome = 0;
-  for (const pos of positions) {
-    const sd = combinedStockDataMap.get(pos.stockCode);
-    const yield_ = sd?.fundamentals.dividendYield;
-    const currentPrice = sd?.quote.currentPrice ?? pos.buyPrice;
-    
-    // 港股需要汇率转换
-    const isHKStock = /^0[19]\d{4}$/.test(pos.stockCode) || /^0\d{5}$/.test(pos.stockCode);
-    const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
-    
-    const marketValue = pos.shares * currentPrice * exchangeRate;
-    if (yield_ != null && yield_ > 0) {
-      annualDividendIncome += marketValue * (yield_ / 100);
-    }
-  }
-
-  const dividendYieldOnCost = summary.totalInvested > 0
-    ? (annualDividendIncome / summary.totalInvested) * 100
-    : 0;
+  // 年化分红/成本股息率统一由 summary 提供（portfolio-calc 唯一口径）
+  const annualDividendIncome = summary.annualDividendIncome;
+  const dividendYieldOnCost = summary.dividendYieldOnCost;
 
   // 平均持仓年数
   const avgYears = positions.length > 0
     ? positions.reduce((sum, p) => {
-        const buyDate = new Date(p.buyDate);
-        const years = (Date.now() - buyDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+        // buyDate 缺失（如同步数据）按 0 年计，避免 Invalid Date 产生 NaN
+        const t = p.buyDate ? new Date(p.buyDate).getTime() : NaN;
+        const years = Number.isFinite(t)
+          ? (Date.now() - t) / (365.25 * 24 * 60 * 60 * 1000)
+          : 0;
         return sum + years;
       }, 0) / positions.length
     : 0;
@@ -244,30 +192,27 @@ export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps
             {/* SVG 环形图 */}
             <svg width="120" height="120" viewBox="0 0 120 120">
               {(() => {
-                const totalMV = positions.reduce((s, p) => {
-                  const sd = combinedStockDataMap.get(p.stockCode);
-                  const currentPrice = sd?.quote.currentPrice ?? p.buyPrice;
-                  
-                  // 港股需要汇率转换
-                  const isHKStock = /^0[19]\d{4}$/.test(p.stockCode) || /^0\d{5}$/.test(p.stockCode);
-                  const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
-                  
-                  return s + p.shares * currentPrice * exchangeRate;
-                }, 0);
+                const totalMV = positions.reduce(
+                  (s, p) =>
+                    s +
+                    calcMarketValue(
+                      p.stockCode || "",
+                      p.shares,
+                      combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                    ),
+                  0
+                );
                 if (totalMV <= 0) return null;
                 const cx = 60, cy = 60, r = 48, sw = 14;
                 const colors = ["#2563eb","#16a34a","#d97706","#7c3aed","#dc2626","#0891b2","#be185d","#ca8a04","#4f46e5","#0d9488"];
                 let prevAngle = -90;
                 const segments: React.ReactNode[] = [];
                 positions.forEach((p, i) => {
-                  const sd = combinedStockDataMap.get(p.stockCode);
-                  const currentPrice = sd?.quote.currentPrice ?? p.buyPrice;
-                  
-                  // 港股需要汇率转换
-                  const isHKStock = /^0[19]\d{4}$/.test(p.stockCode) || /^0\d{5}$/.test(p.stockCode);
-                  const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
-                  
-                  const mv = p.shares * currentPrice * exchangeRate;
+                  const mv = calcMarketValue(
+                    p.stockCode || "",
+                    p.shares,
+                    combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                  );
                   const pct = mv / totalMV;
                   const angle = pct * 360;
                   const startAngle = prevAngle;
@@ -305,26 +250,23 @@ export default function PortfolioSummary({ stockDataMap }: PortfolioSummaryProps
             {/* 图例 */}
             <div style={{ flex: 1, minWidth: 180 }}>
               {(() => {
-                const totalMV = positions.reduce((s, p) => {
-                  const sd = combinedStockDataMap.get(p.stockCode);
-                  const currentPrice = sd?.quote.currentPrice ?? p.buyPrice;
-                  
-                  // 港股需要汇率转换
-                  const isHKStock = /^0[19]\d{4}$/.test(p.stockCode) || /^0\d{5}$/.test(p.stockCode);
-                  const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
-                  
-                  return s + p.shares * currentPrice * exchangeRate;
-                }, 0);
+                const totalMV = positions.reduce(
+                  (s, p) =>
+                    s +
+                    calcMarketValue(
+                      p.stockCode || "",
+                      p.shares,
+                      combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                    ),
+                  0
+                );
                 const colors = ["#2563eb","#16a34a","#d97706","#7c3aed","#dc2626","#0891b2","#be185d","#ca8a04","#4f46e5","#0d9488"];
                 return positions.map((p, i) => {
-                  const sd = combinedStockDataMap.get(p.stockCode);
-                  const currentPrice = sd?.quote.currentPrice ?? p.buyPrice;
-                  
-                  // 港股需要汇率转换
-                  const isHKStock = /^0[19]\d{4}$/.test(p.stockCode) || /^0\d{5}$/.test(p.stockCode);
-                  const exchangeRate = isHKStock ? HKD_TO_CNY : 1;
-                  
-                  const mv = p.shares * currentPrice * exchangeRate;
+                  const mv = calcMarketValue(
+                    p.stockCode || "",
+                    p.shares,
+                    combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                  );
                   const pct = totalMV > 0 ? (mv / totalMV) * 100 : 0;
                   return (
                     <Flex key={p.id} align="center" gap={6} style={{ marginBottom: 4 }}>

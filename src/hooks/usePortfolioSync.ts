@@ -24,7 +24,8 @@ export function usePortfolioSync(positions: Position[]) {
         await fetch("/api/portfolio/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(positions),
+          // route 期望 { data: [...] } 包裹（裸数组会被 400 拒绝）
+          body: JSON.stringify({ data: positions }),
         });
       } catch {
         // 静默失败

@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   Card, Table, Button, Input, InputNumber, Modal, Form, Statistic,
   Flex, Tag, Typography, Empty, Space, Popconfirm, Tooltip, Row, Col,
@@ -18,8 +18,8 @@ import {
 import DonutChart from "./DonutChart";
 import TradeAdviceCard from "./TradeAdvice";
 import PortfolioSyncModal from "./PortfolioSyncModal";
-import { getExchangeRate } from "@/lib/stockUtils";
-import type { Position, PositionMetrics, StockData } from "@/lib/types";
+import { calcMarketValue } from "@/lib/stockUtils";
+import type { Position, StockData } from "@/lib/types";
 import type { ValuationData } from "@/app/api/valuation/route";
 import { computeTradeAdvice, type TradeAdvice } from "@/lib/trade-advice";
 import { usePortfolio } from "@/hooks/usePortfolio";
@@ -46,48 +46,12 @@ interface PortfolioPanelProps {
 }
 
 export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
-  // 获取持仓股票的实时数据（解决港股不在 watchlist 里的问题）
-  const [portfolioStocks, setPortfolioStocks] = useState<Map<string, StockData>>(new Map());
-  
-  useEffect(() => {
-    const fetchPortfolioStocks = async () => {
-      const stored = localStorage.getItem("ts-stock-monitor:portfolio");
-      if (!stored) return;
-      
-      try {
-        const positions = JSON.parse(stored);
-        const codes = positions.map((p: Position) => p.stockCode).filter(Boolean);
-        if (codes.length === 0) return;
-        
-        const res = await fetch(`/api/stocks?codes=${codes.join(",")}`);
-        const json = await res.json();
-        
-        if (json.success && json.data) {
-          const map = new Map<string, StockData>();
-          json.data.forEach((s: StockData) => map.set(s.quote.code, s));
-          setPortfolioStocks(map);
-        }
-      } catch (err) {
-        console.error("获取持仓数据失败:", err);
-      }
-    };
-    
-    fetchPortfolioStocks();
-    const timer = setInterval(fetchPortfolioStocks, 60000); // 每分钟更新
-    return () => clearInterval(timer);
-  }, []);
-  
-  // 合并 stockDataMap 和 portfolioStocks
-  const combinedStockDataMap = useMemo(() => {
-    const merged = new Map(stockDataMap);
-    portfolioStocks.forEach((v, k) => merged.set(k, v));
-    return merged;
-  }, [stockDataMap, portfolioStocks]);
-  
+  // usePortfolio 内部自动合并持仓实时行情（含 watchlist 外的港股，共享缓存）
   const {
     positions, metrics, summary,
+    stockDataMap: combinedStockDataMap,
     addPosition, removePosition, addDividend, removeDividend,
-  } = usePortfolio(combinedStockDataMap);
+  } = usePortfolio(stockDataMap);
 
   usePortfolioSync(positions);
 
@@ -180,9 +144,9 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       const existing = positions.find(p => p.stockCode === item.code);
       if (existing) {
         // 更新已有持仓（ shares/cost 可能变了）
-        if (existing.shares !== item.shares || Math.abs(existing.buyPrice - item.cost) > 0.001) {
+        if (existing.shares !== item.shares || Math.abs((existing.buyPrice ?? 0) - item.cost) > 0.001) {
           // 删除旧的，添加新的
-          removePosition(existing.id);
+          removePosition(existing.id ?? "");
           addPosition({
             stockCode: item.code,
             stockName: item.name || item.code,
@@ -220,7 +184,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     {
       title: "名称", key: "name", width: 90,
       render: (_: any, r: Position) => {
-        const sd = stockDataMap.get(r.stockCode);
+        const sd = combinedStockDataMap.get(r.stockCode || "");
         const color = sd?.quote.changePercent
           ? (sd.quote.changePercent > 0 ? "var(--red)" : sd.quote.changePercent < 0 ? "var(--green)" : "var(--text-tertiary)")
           : "var(--text-tertiary)";
@@ -249,7 +213,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     },
     {
       title: "成本均价", key: "avgCost", width: 80,
-      sorter: (a: Position, b: Position) => a.buyPrice - b.buyPrice,
+      sorter: (a: Position, b: Position) => (a.buyPrice ?? 0) - (b.buyPrice ?? 0),
       render: (_: any, r: Position) => (
         <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12 }}>
           ¥{fmt(r.buyPrice)}
@@ -258,7 +222,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     },
     {
       title: "总投入", key: "totalCost", width: 80,
-      sorter: (a: Position, b: Position) => a.totalCost - b.totalCost,
+      sorter: (a: Position, b: Position) => (a.totalCost ?? 0) - (b.totalCost ?? 0),
       render: (_: any, r: Position) => (
         <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12 }}>
           ¥{fmt(r.totalCost)}
@@ -268,18 +232,18 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     {
       title: "累计分红", key: "totalDiv", width: 80,
       sorter: (a: Position, b: Position) => {
-        const ma = metrics.get(a.id)?.totalDividends ?? 0;
-        const mb = metrics.get(b.id)?.totalDividends ?? 0;
+        const ma = metrics.get(a.id ?? "")?.totalDividends ?? 0;
+        const mb = metrics.get(b.id ?? "")?.totalDividends ?? 0;
         return ma - mb;
       },
       render: (_: any, r: Position) => (
         <Tooltip title={
-          r.dividends.length > 0
-            ? r.dividends.map((d) => `${d.date} ¥${d.perShare}/股 × ${fmt(d.total)}`).join("\n")
+          (r.dividends || []).length > 0
+            ? (r.dividends || []).map((d) => `${d.date} ¥${d.perShare}/股 × ${fmt(d.total)}`).join("\n")
             : "暂无分红记录"
         }>
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "var(--green)", cursor: "help" }}>
-            ¥{fmt(metrics.get(r.id)?.totalDividends)}
+            ¥{fmt(metrics.get(r.id ?? "")?.totalDividends)}
           </span>
         </Tooltip>
       ),
@@ -287,13 +251,13 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     {
       title: "真实成本", key: "realCost", width: 80,
       sorter: (a: Position, b: Position) => {
-        const ma = metrics.get(a.id)?.realCost ?? 0;
-        const mb = metrics.get(b.id)?.realCost ?? 0;
+        const ma = metrics.get(a.id ?? "")?.realCost ?? 0;
+        const mb = metrics.get(b.id ?? "")?.realCost ?? 0;
         return ma - mb;
       },
       render: (_: any, r: Position) => {
-        const rc = metrics.get(r.id)?.realCost;
-        const col = rc != null && rc < r.totalCost ? "var(--green)" : undefined;
+        const rc = metrics.get(r.id ?? "")?.realCost;
+        const col = rc != null && rc < (r.totalCost ?? 0) ? "var(--green)" : undefined;
         return (
           <Tooltip title="总投入 - 累计分红，越拿越便宜" color="#27272a">
             <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: col, cursor: "help" }}>
@@ -306,12 +270,12 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     {
       title: "成本股息率", key: "costYield", width: 85,
       sorter: (a: Position, b: Position) => {
-        const ma = metrics.get(a.id)?.costYield ?? 0;
-        const mb = metrics.get(b.id)?.costYield ?? 0;
+        const ma = metrics.get(a.id ?? "")?.costYield ?? 0;
+        const mb = metrics.get(b.id ?? "")?.costYield ?? 0;
         return ma - mb;
       },
       render: (_: any, r: Position) => {
-        const y = metrics.get(r.id)?.costYield;
+        const y = metrics.get(r.id ?? "")?.costYield;
         const col = y != null && y > 8 ? "var(--green)" : y != null && y > 5 ? "var(--blue)" : undefined;
         return (
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, fontWeight: y != null && y > 8 ? 700 : 400, color: col }}>
@@ -323,12 +287,12 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
     {
       title: "盈亏", key: "profit", width: 80,
       sorter: (a: Position, b: Position) => {
-        const ma = metrics.get(a.id)?.totalProfit ?? 0;
-        const mb = metrics.get(b.id)?.totalProfit ?? 0;
+        const ma = metrics.get(a.id ?? "")?.totalProfit ?? 0;
+        const mb = metrics.get(b.id ?? "")?.totalProfit ?? 0;
         return ma - mb;
       },
       render: (_: any, r: Position) => {
-        const m = metrics.get(r.id);
+        const m = metrics.get(r.id ?? "");
         if (!m) return "--";
         const col = m.totalProfit > 0 ? "var(--red)" : m.totalProfit < 0 ? "var(--green)" : "var(--text-tertiary)";
         return (
@@ -348,12 +312,12 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
           <Button
             type="link" size="small"
             icon={<GiftOutlined />}
-            onClick={() => { setDivPositionId(r.id); setDivOpen(true); }}
+            onClick={() => { setDivPositionId(r.id ?? null); setDivOpen(true); }}
           />
           <Popconfirm
             title="删除此持仓？"
             description="分红记录也会一起删除"
-            onConfirm={() => removePosition(r.id)}
+            onConfirm={() => removePosition(r.id ?? "")}
             okText="删除"
             cancelText="取消"
           >
@@ -398,24 +362,32 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
           }}>
             <DonutChart
               positions={positions}
-              getMarketValue={(p) => {
-                const sd = stockDataMap.get(p.stockCode);
-                const price = sd?.quote.currentPrice ?? p.buyPrice;
-                return p.shares * price * getExchangeRate(p.stockCode);
-              }}
-              getLabel={(p) => p.stockName}
+              getMarketValue={(p) =>
+                calcMarketValue(
+                  p.stockCode || "",
+                  p.shares,
+                  combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                )
+              }
+              getLabel={(p) => p.stockName || p.stockCode || ""}
               size={120}
             />
             <div style={{ width: 140 }}>
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>持仓分布</div>
               {positions.slice(0, 6).map((p, i) => {
                 const mv = (() => {
-                  const sd = stockDataMap.get(p.stockCode);
-                  return (sd?.quote.currentPrice ?? p.buyPrice) * p.shares * getExchangeRate(p.stockCode);
+                  return calcMarketValue(
+                    p.stockCode || "",
+                    p.shares,
+                    combinedStockDataMap.get(p.stockCode || "")?.quote.currentPrice ?? p.buyPrice ?? 0
+                  );
                 })();
                 const total = positions.reduce((s, pp) => {
-                  const sd2 = stockDataMap.get(pp.stockCode);
-                  return s + (sd2?.quote.currentPrice ?? pp.buyPrice) * pp.shares * getExchangeRate(pp.stockCode);
+                  return s + calcMarketValue(
+                    pp.stockCode || "",
+                    pp.shares,
+                    combinedStockDataMap.get(pp.stockCode || "")?.quote.currentPrice ?? pp.buyPrice ?? 0
+                  );
                 }, 0);
                 const pct = total > 0 ? (mv / total) * 100 : 0;
                 const colors = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#06b6d4"];

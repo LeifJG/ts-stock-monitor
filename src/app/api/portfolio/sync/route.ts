@@ -31,11 +31,19 @@ export async function POST(request: Request) {
       portfolio = JSON.parse(raw);
     }
 
-    // 转换并合并数据
-    const newPositions = data.map((item: any) => ({
+    // 转换并合并数据（兼容 localStorage 标准字段 stockCode/buyPrice 和同步字段 code/cost）
+    // 写入前过滤坏数据（无代码/0股/无成本价，如 ETF 残留记录）
+    const newPositions = data
+      .filter((item: any) => {
+        const code = String(item?.stockCode || item?.code || "").trim();
+        const shares = parseInt(item?.shares) || 0;
+        const cost = parseFloat(item?.costPrice || item?.cost || item?.buyPrice) || 0;
+        return !!code && shares > 0 && cost > 0;
+      })
+      .map((item: any) => ({
       code: String(item.stockCode || item.code || ''),
       shares: parseInt(item.shares) || 0,
-      cost: parseFloat(item.costPrice || item.cost) || 0,
+      cost: parseFloat(item.costPrice || item.cost || item.buyPrice) || 0,
       price: parseFloat(item.currentPrice || item.price) || undefined,
       profit: parseFloat(item.profit) || undefined,
       marketValue: parseFloat(item.marketValue) || undefined,
