@@ -92,71 +92,93 @@ export function computeTradeAdvice(
   const fear = fearGauge?.overall ?? null;
   const pePct5y = valuation?.pe_pct_5y ?? null;
   const pbPct5y = valuation?.pb_pct_5y ?? null;
+  // 亏损股 PE 无效（负值），此时 PE 分位不可用 → 回落到 PB 分位
+  const effPePct = pe != null && pe > 0 ? pePct5y : null;
 
   // 综合评分（用现有指标近似计算，避免循环依赖）
   const compositeScore = estimateCompositeScore(stock);
 
-  // 安全边际
+  // ── 安全边际
   const safetyMargin = safetyScore?.score ?? null;
   const grahamValue = safetyScore?.models?.growth?.value ?? safetyScore?.grahamNumber ?? null;
   const ddmValue = safetyScore?.models?.ddm?.value ?? null;
+  let modelDivergent = false;
 
-  // ── 合理估值：取格雷厄姆增长版 / DDM 的中间值 ──
+  // ── 合理估值：格雷厄姆增长版 / DDM ──
+  // 两模型分歧 >50% 时取保守值（min），避免"均值掩盖分歧"
   let fairValue: number | null = null;
   const modelValues = [grahamValue, ddmValue].filter((v): v is number => v != null && v > 0);
-  if (modelValues.length > 0) {
-    fairValue = modelValues.reduce((a, b) => a + b, 0) / modelValues.length;
+  if (modelValues.length === 2) {
+    const avg = (modelValues[0] + modelValues[1]) / 2;
+    const divergence = Math.abs(modelValues[0] - modelValues[1]) / avg;
+    if (divergence > 0.5) {
+      fairValue = Math.min(...modelValues);
+      modelDivergent = true;
+    } else {
+      fairValue = avg;
+    }
+  } else if (modelValues.length === 1) {
+    fairValue = modelValues[0];
   }
 
-  // ── 止盈价（目标价）──
-  // 优先用合理估值；若合理估值高于现价，止盈 = 合理估值 × 0.95（留缓冲）
-  // 若合理估值低于现价，止盈 = 现价 × 1.15（技术面反弹目标）
-  let targetPrice: number | null = null;
-  if (fairValue != null && fairValue > price) {
-    targetPrice = fairValue * 0.95;
-  } else if (fairValue != null && fairValue < price) {
-    targetPrice = price * 1.15;
+  // ── 关键价位（以合理估值为锚，确保 加仓 < 合理估值 < 减仓 < 止盈 的单调关系）──
+  let targetPrice: number | null;
+  let addMorePrice: number | null;
+  let reducePrice: number | null;
+  if (fairValue != null && fairValue > 0) {
+    if (fairValue > price) {
+      // 低估：回落分批加仓，涨过合理估值分批兑现
+      addMorePrice = round2(Math.min(price * 0.9, fairValue * 0.95));
+      reducePrice = round2(fairValue * 1.1);
+      targetPrice = round2(fairValue * 1.2);
+    } else {
+      // 现价已高于合理估值：等回落到合理区再加；若已超减仓线，直接提示减仓
+      addMorePrice = round2(fairValue * 1.05);
+      reducePrice = round2(Math.min(fairValue * 1.1, price * 1.05));
+      targetPrice = round2(price * 1.08);
+    }
   } else {
-    targetPrice = price * 1.12;
-  }
-
-  // ── 止损价：基于买入价的 -8%（个股波动控制） ──
-  // 若估值分位极低（<10%）可放宽到 -12%，极高位（>80%）收紧到 -6%
-  let stopLossPct = 0.08;
-  if (pePct5y != null) {
-    if (pePct5y < 10) stopLossPct = 0.12;
-    else if (pePct5y > 80) stopLossPct = 0.06;
-  }
-  const stopLossPrice = round2(buyPrice * (1 - stopLossPct));
-
-  // ── 加仓价：回落到合理估值附近或现价 -10% ──
-  let addMorePrice: number | null = null;
-  if (fairValue != null && fairValue < price) {
-    addMorePrice = round2(fairValue * 1.05);
-  } else {
+    // 无模型估值可用：退化为技术位
+    targetPrice = round2(price * 1.12);
     addMorePrice = round2(price * 0.9);
-  }
-
-  // ── 减仓价：接近合理估值上限或现价 +15% ──
-  let reducePrice: number | null = null;
-  if (fairValue != null && fairValue > price) {
-    reducePrice = round2(fairValue * 1.1);
-  } else {
     reducePrice = round2(price * 1.15);
   }
+
+  // ── 风控位（基于买入价；仅作破位参考，低估区分批加仓优于止损）──
+  // 估值分位极低（<10%）放宽到 -12%，极高位（>80%）收紧到 -6%
+  let stopLossPct = 0.08;
+  const effPctForStop = effPePct ?? pbPct5y;
+  if (effPctForStop != null) {
+    if (effPctForStop < 10) stopLossPct = 0.12;
+    else if (effPctForStop > 80) stopLossPct = 0.06;
+  }
+  const stopLossPrice = round2(buyPrice * (1 - stopLossPct));
 
   // ── 决策逻辑 ──
   const reasons: string[] = [];
   const risks: string[] = [];
 
-  // 1. 估值分位（核心）
+  // 1. 估值分位（核心权重）：PE 为主、PB 兜底，两者齐备时 6:4 融合
   let valuationScore = 50; // 未知 = 中性
-  if (pePct5y != null) {
-    if (pePct5y < 15) { valuationScore = 90; reasons.push(`PE 5年分位 ${pePct5y}% — 处于历史低位区间`); }
-    else if (pePct5y < 35) { valuationScore = 75; reasons.push(`PE 5年分位 ${pePct5y}% — 偏低`); }
-    else if (pePct5y < 65) { valuationScore = 50; reasons.push(`PE 5年分位 ${pePct5y}% — 估值中枢`); }
-    else if (pePct5y < 85) { valuationScore = 30; risks.push(`PE 5年分位 ${pePct5y}% — 偏高`); }
-    else { valuationScore = 15; risks.push(`PE 5年分位 ${pePct5y}% — 历史高位，追高风险大`); }
+  const pctForDecision =
+    effPePct != null && pbPct5y != null
+      ? effPePct * 0.6 + pbPct5y * 0.4
+      : (effPePct ?? pbPct5y);
+  if (pctForDecision != null) {
+    const label =
+      effPePct != null && pbPct5y != null
+        ? `PE/PB 分位融合`
+        : effPePct != null
+          ? "PE 5年分位"
+          : "PB 5年分位";
+    if (pctForDecision < 15) { valuationScore = 90; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 处于历史低位区间`); }
+    else if (pctForDecision < 35) { valuationScore = 75; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 偏低`); }
+    else if (pctForDecision < 65) { valuationScore = 50; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 估值中枢`); }
+    else if (pctForDecision < 85) { valuationScore = 30; risks.push(`${label} ${pctForDecision.toFixed(0)}% — 偏高`); }
+    else { valuationScore = 15; risks.push(`${label} ${pctForDecision.toFixed(0)}% — 历史高位，追高风险大`); }
+  }
+  if (pe != null && pe < 0 && pbPct5y != null) {
+    reasons.push(`亏损股 PE 无效，已按 PB 分位 ${pbPct5y.toFixed(0)}% 评估`);
   }
 
   // 2. 安全边际
@@ -177,10 +199,13 @@ export function computeTradeAdvice(
     else { qualityScore2 = 25; risks.push(`综合评分 ${compositeScore} — 基本面较弱`); }
   }
 
-  // 4. 股息率（防御性）
+  // 4. 股息率（防御性，参与加权——价值派核心指标之一）
+  let dividendScore2 = 50; // 无分红数据 = 中性（成长股不罚分）
   if (dividendYield != null) {
-    if (dividendYield >= 5) reasons.push(`股息率 ${dividendYield.toFixed(1)}% — 高股息防御性佳`);
-    else if (dividendYield >= 3) reasons.push(`股息率 ${dividendYield.toFixed(1)}% — 具备分红回报`);
+    if (dividendYield >= 6) { dividendScore2 = 85; reasons.push(`股息率 ${dividendYield.toFixed(1)}% — 高股息防御性佳`); }
+    else if (dividendYield >= 4) { dividendScore2 = 70; reasons.push(`股息率 ${dividendYield.toFixed(1)}% — 分红回报厚`); }
+    else if (dividendYield >= 2.5) { dividendScore2 = 55; reasons.push(`股息率 ${dividendYield.toFixed(1)}% — 具备分红回报`); }
+    else { dividendScore2 = 40; }
   }
 
   // 5. 恐慌指数（情绪面）
@@ -197,19 +222,29 @@ export function computeTradeAdvice(
   }
 
   // ── 综合判定 ──
-  const total = valuationScore * 0.35 + safetyScore2 * 0.3 + qualityScore2 * 0.35;
+  // 四分量：估值分位 30% + 安全边际 25% + 综合评分 30% + 股息率 15%
+  const total = valuationScore * 0.3 + safetyScore2 * 0.25 + qualityScore2 * 0.3 + dividendScore2 * 0.15;
 
   let action: TradeAction;
-  if (total >= 78) action = "strongBuy";
-  else if (total >= 62) action = "buy";
-  else if (total >= 48) action = "hold";
-  else if (total >= 35) action = "watch";
+  if (total >= 76) action = "strongBuy";
+  else if (total >= 60) action = "buy";
+  else if (total >= 46) action = "hold";
+  else if (total >= 33) action = "watch";
   else action = "avoid";
+
+  // 低估建仓时，机械止损与价值逻辑矛盾 → 提示分批优于止损
+  if ((action === "strongBuy" || action === "buy") && (pctForDecision ?? 100) < 35) {
+    risks.push("低估区分批加仓优于止损，风控位仅作基本面破坏参考");
+  }
+  if (modelDivergent) {
+    risks.push("两套估值模型分歧较大，已取保守值，估值置信度低");
+  }
 
   const meta = ACTION_META[action];
 
   // ── 一句话结论 ──
-  const summary = buildSummary(action, price, fairValue, pePct5y, dividendYield);
+  const ccy = isAShare(code) ? "¥" : "HK$";
+  const summary = buildSummary(action, price, fairValue, pePct5y, dividendYield, ccy);
 
   return {
     code,
@@ -263,8 +298,8 @@ function estimateCompositeScore(stock: StockData): number | null {
     score += stock.safetyScore.score * 0.2;
     weight += 0.2;
   }
-  // 负债率（越低越好，<30% 满分）
-  if (f.debtRatio != null) {
+  // 负债率（越低越好，<30% 满分；金融股负债率 90%+ 是行业常态，跳过该项）
+  if (f.debtRatio != null && !isFinancial(stock.quote.code)) {
     const dr = Math.min(Math.max(f.debtRatio, 0), 70);
     score += (1 - dr / 70) * 100 * 0.05;
     weight += 0.05;
@@ -299,7 +334,8 @@ function buildSummary(
   price: number,
   fairValue: number | null,
   pePct5y: number | null,
-  dividendYield: number | null
+  dividendYield: number | null,
+  ccy: string = "¥"
 ): string {
   const base = {
     strongBuy: "估值处于历史低位且基本面优秀，当前具备较强安全边际，可分批建仓",
@@ -311,7 +347,7 @@ function buildSummary(
 
   const parts = [base];
   if (fairValue != null && fairValue > price) {
-    parts.push(`模型合理估值约 ¥${fairValue.toFixed(1)}，较现价有 ${(((fairValue - price) / price) * 100).toFixed(0)}% 空间`);
+    parts.push(`模型合理估值约 ${ccy}${fairValue.toFixed(1)}，较现价有 ${(((fairValue - price) / price) * 100).toFixed(0)}% 空间`);
   }
   if (pePct5y != null && pePct5y < 30) {
     parts.push(`估值分位仅 ${pePct5y}%`);
@@ -331,9 +367,11 @@ export function computePositionLevels(
   let tpPct = 0.2;   // 默认止盈 +20%
   let slPct = 0.08;  // 默认止损 -8%
 
-  if (valuation?.pe_pct_5y != null) {
-    if (valuation.pe_pct_5y < 20) { tpPct = 0.3; slPct = 0.1; }   // 低估：放宽
-    else if (valuation.pe_pct_5y > 80) { tpPct = 0.15; slPct = 0.06; } // 高估：收紧
+  // 与主函数 computeTradeAdvice 同一口径：分位 <10% 放宽、>80% 收紧
+  const effPct = valuation?.pe_pct_5y ?? valuation?.pb_pct_5y ?? null;
+  if (effPct != null) {
+    if (effPct < 10) { tpPct = 0.3; slPct = 0.12; }
+    else if (effPct > 80) { tpPct = 0.15; slPct = 0.06; }
   }
   // 高股息给更宽的止损容忍
   if (stock?.fundamentals.dividendYield != null && stock.fundamentals.dividendYield >= 5) {

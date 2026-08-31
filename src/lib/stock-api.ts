@@ -13,6 +13,7 @@ import * as path from "path";
 const DIVIDEND_CACHE_FILE = path.join(process.cwd(), "data", "dividend_yields.json");
 const FEAR_TECH_CACHE_FILE = path.join(process.cwd(), "data", "fear_tech_cache.json");
 const FINANCIALS_CACHE_FILE = path.join(process.cwd(), "data", "financials_cache.json");
+const VALUATION_CACHE_FILE = path.join(process.cwd(), "data", "valuation_cache.json");
 
 /**
  * 读取统一股息率缓存（cninfo 真实数据，由 dividend_data.py 维护）
@@ -97,6 +98,30 @@ interface FinancialsEntry {
 
 let _financialsCache: Record<string, FinancialsEntry> | null = null;
 let _finCacheMtime = 0;
+
+/** 读取估值分位缓存（valuation_data.py 维护，含港股 PB，每日 15:05 刷新） */
+let _valCache: Record<string, { pb?: number | null }> | null = null;
+let _valCacheMtime = 0;
+function readValuationCache(): Record<string, { pb?: number | null }> | null {
+  try {
+    const stat = fs.statSync(VALUATION_CACHE_FILE);
+    if (stat.mtimeMs === _valCacheMtime && _valCache) return _valCache;
+    const raw = fs.readFileSync(VALUATION_CACHE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const result: Record<string, { pb?: number | null }> = {};
+    for (const [code, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === "object") {
+        const e = entry as { pb?: number | null };
+        result[code] = { pb: typeof e.pb === "number" ? e.pb : null };
+      }
+    }
+    _valCache = result;
+    _valCacheMtime = stat.mtimeMs;
+    return result;
+  } catch {
+    return _valCache;
+  }
+}
 
 function readFinancialsCache(): Record<string, FinancialsEntry> | null {
   try {
@@ -514,15 +539,18 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
       };
 
       // BVPS = 价 / PB（优先用PB计算，腾讯直给作为备选）
-      const bvpsCalc = d.pb != null && d.pb > 0
-        ? Math.round((d.currentPrice / d.pb) * 100) / 100
+      // 港股行情源 PB 缺失 → 从估值缓存兜底（valuation_cache 每日 15:05 刷新，含港股 PB）
+      const valEntry = readValuationCache()?.[d.code];
+      const pbEff = d.pb ?? valEntry?.pb ?? null;
+      const bvpsCalc = pbEff != null && pbEff > 0
+        ? Math.round((d.currentPrice / pbEff) * 100) / 100
         : null;
       const bvps = bvpsCalc ?? d.bvps;
 
       // ROE = PB / PE（杜邦分析最简形式）
       let roe: number | null = null;
-      if (d.pb != null && d.pe != null && d.pe > 0) {
-        const calcRoe = (d.pb / d.pe) * 100;
+      if (pbEff != null && d.pe != null && d.pe > 0) {
+        const calcRoe = (pbEff / d.pe) * 100;
         if (calcRoe < 100) roe = Math.round(calcRoe * 100) / 100;
       }
       // 腾讯直给的 ROE 作为备选
@@ -604,7 +632,7 @@ export async function fetchFullStockData(codes: StockCode[]): Promise<StockData[
 
       const fundamentals: StockFundamentals = {
         pe: d.pe,
-        pb: d.pb,
+        pb: pbEff,
         marketCap: d.marketCap,
         dividendYield: divYield,
         turnoverRate: d.turnoverRate,
