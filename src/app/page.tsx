@@ -125,7 +125,8 @@ export default function Home() {
   const addStock = useCallback(() => {
     const code = newCode.trim();
     if (!code) return;
-    const clean = code.replace(/\D/g, "");
+    let clean = code.replace(/\D/g, "");
+    if (clean.length >= 1 && clean.length < 5) clean = clean.padStart(5, "0"); // 港股短码补零：700→00700
     // A股6位，港股通5位
     const validLen = clean.length === 5 || clean.length === 6;
     if (!validLen || watchlist.includes(clean)) return;
