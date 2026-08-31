@@ -153,7 +153,17 @@ def fetch_dividend_yields(codes: list) -> dict:
 
 # ─── 分析策略 ────────────────────────────────────────────────
 
-def analyze_position(pos: dict, quote: dict) -> dict:
+def load_valuation_cache() -> dict:
+    """估值分位缓存（valuation_data.py 维护，含港股，每日 15:05 刷新）"""
+    try:
+        cache_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "valuation_cache.json")
+        with open(cache_file, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     """对单只持仓生成操作建议"""
     # 适配两种字段格式
     code = pos.get("stockCode") or pos.get("code", "")
@@ -244,31 +254,71 @@ def analyze_position(pos: dict, quote: dict) -> dict:
             "label": f"↑{grid_step * i:.0f}% 减持",
         })
 
-    # ── 策略 2: 做低成本建议 ──────────────────────────
+    # ── 策略 2: 做低成本建议（带估值闸门）──────────
     cost_diff = current_price - buy_price
     cost_diff_pct = (cost_diff / buy_price) * 100 if buy_price > 0 else 0
 
+    # 融合估值分位：PE 为主（盈利股），PB 兜底（亏损股）——与 trade-advice.ts 同口径
+    val = val or {}
+    pe_pct = val.get("pe_pct_5y")
+    pb_pct = val.get("pb_pct_5y")
+    pb_abs = val.get("pb")
+    eff_pe_pct = pe_pct if (pe is not None and pe > 0) else None
+    blend_pct = (eff_pe_pct * 0.6 + pb_pct * 0.4) if (eff_pe_pct is not None and pb_pct is not None) \
+        else (eff_pe_pct if eff_pe_pct is not None else pb_pct)
+
+    # 亏损股判定：PE 负值或缺失，且 PB 绝对值仍高（>3 倍，对亏损公司无安全垫）
+    is_loss_stock = (pe is not None and pe < 0) or (eff_pe_pct is None and pb_pct is None)
+    loss_no_margin = is_loss_stock and (pb_abs is None or pb_abs > 3)
+
     cost_advice = []
     if cost_diff_pct < -10:
-        cost_advice.append({
-            "action": "补仓",
-            "reason": f"现价低于成本价 {abs(cost_diff_pct):.1f}%，适合补仓摊低成本",
-            "priority": "high",
-        })
-        # 建议补仓金额
-        if total_cost > 0:
-            add_shares = round(shares * 0.3)  # 建议补 30%
+        # 估值闸门：回撤≠便宜，先看分位再谈补仓
+        if loss_no_margin:
             cost_advice.append({
-                "action": f"补 {add_shares} 股",
-                "reason": f"当前持有 {shares} 股，建议补仓 30%（约 {add_shares} 股），降低持仓成本",
+                "action": "不建议补仓",
+                "reason": f"低于成本 {abs(cost_diff_pct):.1f}%，但亏损股 PB {pb_abs} 倍仍高，无盈利无股息缺安全垫，摊低成本无意义",
+                "priority": "high",
+            })
+        elif blend_pct is not None and blend_pct > 80:
+            cost_advice.append({
+                "action": "不建议补仓",
+                "reason": f"虽低于成本 {abs(cost_diff_pct):.1f}%，但估值分位 {blend_pct:.0f}% 仍处历史高位，回撤未消化完，补仓=接飞刀",
+                "priority": "high",
+            })
+        elif blend_pct is not None and blend_pct > 50:
+            cost_advice.append({
+                "action": "暂缓补仓",
+                "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 但估值分位 {blend_pct:.0f}% 中性偏高，等分位 <50% 或基本面确认再补",
                 "priority": "medium",
             })
+        else:
+            cost_advice.append({
+                "action": "补仓",
+                "reason": f"现价低于成本价 {abs(cost_diff_pct):.1f}%，且估值分位 {blend_pct:.0f}% 偏低，适合补仓摊低成本",
+                "priority": "high",
+            })
+            # 建议补仓金额
+            if total_cost > 0:
+                add_shares = round(shares * 0.3)  # 建议补 30%
+                cost_advice.append({
+                    "action": f"补 {add_shares} 股",
+                    "reason": f"当前持有 {shares} 股，建议补仓 30%（约 {add_shares} 股），降低持仓成本",
+                    "priority": "medium",
+                })
     elif cost_diff_pct < -5:
-        cost_advice.append({
-            "action": "轻仓补入",
-            "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，可小批量补仓",
-            "priority": "medium",
-        })
+        if blend_pct is not None and blend_pct > 50:
+            cost_advice.append({
+                "action": "暂缓补仓",
+                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但估值分位 {blend_pct:.0f}% 偏高，暂不补",
+                "priority": "medium",
+            })
+        else:
+            cost_advice.append({
+                "action": "轻仓补入",
+                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，估值分位 {blend_pct:.0f}% 合理，可小批量补仓",
+                "priority": "medium",
+            })
     elif cost_diff_pct > 15:
         cost_advice.append({
             "action": "部分止盈",
@@ -287,6 +337,29 @@ def analyze_position(pos: dict, quote: dict) -> dict:
             "action": "逢高减仓",
             "reason": f"小盈 {cost_diff_pct:.1f}%，可减持 10-15%",
             "priority": "low",
+        })
+
+    # ── 策略 2.5: 止损/纪律检查（价值派口径：止损看逻辑破坏，不看跌幅本身）──
+    stop_advice = []
+    drawdown = -cost_diff_pct  # 正数 = 回撤幅度
+    if is_loss_stock:
+        if loss_no_margin:
+            stop_advice.append({
+                "action": "投机仓纪律",
+                "reason": f"亏损股 PB {pb_abs} 倍，无盈利无股息不符合价值体系；建议仓位上限 5%，回撤超 30% 强制减半",
+                "priority": "high",
+            })
+        if drawdown >= 30:
+            stop_advice.append({
+                "action": "纪律减半",
+                "reason": f"回撤 {drawdown:.0f}% 已达投机仓强制风控线，建议减半控制风险，剩余仓位看亏损收窄斜率",
+                "priority": "high",
+            })
+    elif blend_pct is not None and blend_pct > 95 and drawdown > 10:
+        stop_advice.append({
+            "action": "基本面止损预警",
+            "reason": f"回撤 {drawdown:.0f}% 但盈利下滑推高估值分位至 {blend_pct:.0f}%——跌了反而更贵；若下季财报盈利继续恶化应减仓",
+            "priority": "high",
         })
 
     # ── 策略 3: 股息价值评估 ──────────────────────────
@@ -326,9 +399,34 @@ def analyze_position(pos: dict, quote: dict) -> dict:
                 "priority": "medium",
             })
 
-    # ── 策略 4: 估值提示 ──────────────────────────────
+    # ── 策略 4: 估值提示（分位制，与 trade-advice.ts 同口径）──
     val_advice = []
-    if pe:
+    if blend_pct is not None:
+        if blend_pct < 20:
+            val_advice.append({
+                "action": "估值历史低位",
+                "reason": f"估值分位 {blend_pct:.0f}%（5年），安全边际厚",
+                "priority": "high",
+            })
+        elif blend_pct < 50:
+            val_advice.append({
+                "action": "估值偏低",
+                "reason": f"估值分位 {blend_pct:.0f}%（5年），偏低区间",
+                "priority": "medium",
+            })
+        elif blend_pct < 80:
+            val_advice.append({
+                "action": "估值中枢",
+                "reason": f"估值分位 {blend_pct:.0f}%（5年），合理区间",
+                "priority": "info",
+            })
+        else:
+            val_advice.append({
+                "action": "估值高位",
+                "reason": f"估值分位 {blend_pct:.0f}%（5年），注意回撤风险",
+                "priority": "medium",
+            })
+    elif pe:
         if pe < 10:
             val_advice.append({
                 "action": "估值偏低",
@@ -358,8 +456,9 @@ def analyze_position(pos: dict, quote: dict) -> dict:
 
     # ── 综合操作建议 ──────────────────────────────────
     operations = []
-    all_high = [a for a in cost_advice + div_advice + val_advice if a.get("priority") == "high"]
-    all_medium = [a for a in cost_advice + div_advice + val_advice if a.get("priority") == "medium"]
+    # 止损/纪律建议最优先，其余按 cost/div/val 顺序
+    all_high = [a for a in stop_advice + cost_advice + div_advice + val_advice if a.get("priority") == "high"]
+    all_medium = [a for a in stop_advice + cost_advice + div_advice + val_advice if a.get("priority") == "medium"]
 
     for a in all_high[:2]:
         operations.append({
@@ -450,6 +549,7 @@ def main():
     # 兼容两种字段名：code 或 stockCode
     codes = [p.get("stockCode") or p.get("code") for p in portfolio]
     quotes = fetch_tencent_quotes(codes)
+    val_cache = load_valuation_cache()  # 估值分位缓存（含港股，补仓闸门/止损分析用）
 
     # 从 cninfo 获取真实每股股利（并行，严格可靠）
     # 策略：用真实每股股利算出现价股息率，再和 ROE 估值取大值
@@ -480,7 +580,7 @@ def main():
             pos["stockName"] = quote["name"]
         # 确保 stockCode 字段存在
         pos["stockCode"] = code
-        result = analyze_position(pos, quote)
+        result = analyze_position(pos, quote, val_cache.get(code))
         if result:  # 只添加有效的分析结果
             advice.append(result)
 
