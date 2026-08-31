@@ -11,6 +11,8 @@ ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-moni
 # 3) 刷新指数估值温度表（P0-3修正：必须用 .venv python，系统 python 无 akshare，
 #    原配置导致该步每天静默失败）
 ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-monitor/scripts/fetch_index_valuations.py
-# 4) 触发日报强制生成（重试 5 次 × 30s，容忍服务启动慢）
+# 4) 刷新个股估值分位（研究池∪持仓，含港股百度源；禁代理直连）
+ExecStart=/home/lijg/ts-stock-monitor/.venv/bin/python3 /home/lijg/ts-stock-monitor/scripts/valuation_data.py
+# 5) 触发日报强制生成（重试 5 次 × 30s，容忍服务启动慢）
 ExecStart=/bin/sh -c 'for i in 1 2 3 4 5; do curl -sf -m 300 -X POST http://localhost:3000/api/daily-report >/dev/null && exit 0; sleep 30; done; exit 1'
 TimeoutStartSec=900

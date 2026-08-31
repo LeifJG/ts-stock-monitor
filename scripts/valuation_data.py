@@ -13,9 +13,11 @@ valuation_data.py — 估值分位数据模块
 import os, json, sys, math
 from pathlib import Path
 
-from net_utils import setup_proxy_env
+# 注意：本脚本禁用代理直连。百度估值接口(finance.baidu.com)经 Clash 代理会
+# DNS 失败，东财/百度均是国内站直连即可（P1-6 后不再有硬编码代理默认值）。
+for _k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+    os.environ.pop(_k, None)
 
-setup_proxy_env()
 import akshare as ak
 import numpy as np
 import pandas as pd
@@ -43,8 +45,110 @@ def recent_window(series, years):
     return series[series.index >= cutoff]
 
 
+def is_hk(code: str) -> bool:
+    """港股：5 位数字代码（如 01810/09988）"""
+    return code.isdigit() and len(code) == 5
+
+
+def _pct_result(code: str, dates, pe_vals, pb_vals, cur_price=None) -> dict | None:
+    """PE/PB 历史序列 → 统一的分位/中位/极值/走势结构（A股与港股共用）"""
+    pe = pd.Series(pe_vals, index=pd.to_datetime(dates)).dropna()
+    pb = pd.Series(pb_vals, index=pd.to_datetime(dates)).dropna()
+    if pe.empty and pb.empty:
+        return None
+
+    cur_pe = float(pe.iloc[-1]) if not pe.empty else float("nan")
+    cur_pb = float(pb.iloc[-1]) if not pb.empty else float("nan")
+
+    result = {
+        "code": code,
+        "price": round(cur_price, 2) if cur_price is not None else None,
+        "pe_ttm": round(cur_pe, 2) if not math.isnan(cur_pe) else None,
+        "pb": round(cur_pb, 2) if not math.isnan(cur_pb) else None,
+        "pe_median_5y": round(float(pe[-250 * 5:].median()), 2) if not pe.empty else None,
+        "pb_median_5y": round(float(pb[-250 * 5:].median()), 2) if not pb.empty else None,
+        "updated_at": str((pe.index[-1] if not pe.empty else pb.index[-1]).date()),
+    }
+
+    for years in (1, 3, 5):
+        label = f"{years}y"
+        pe_w = recent_window(pe, years)
+        pb_w = recent_window(pb, years)
+        result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
+        result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
+
+    pe5 = pe[-250 * 5:]
+    pb5 = pb[-250 * 5:]
+    result["pe_min_5y"] = round(float(pe5.min()), 2) if not pe5.empty else None
+    result["pe_max_5y"] = round(float(pe5.max()), 2) if not pe5.empty else None
+    result["pb_min_5y"] = round(float(pb5.min()), 2) if not pb5.empty else None
+    result["pb_max_5y"] = round(float(pb5.max()), 2) if not pb5.empty else None
+
+    hist_pe = pe[-250:]
+    hist_pb = pb[-250:]
+    result["history"] = [
+        {"date": str(d.date()),
+         "pe": round(float(p), 2) if p is not None and not math.isnan(p) else None,
+         "pb": round(float(b), 2) if b is not None and not math.isnan(b) else None}
+        for d, p, b in zip(hist_pe.index, hist_pe.to_numpy(), hist_pb.to_numpy())
+    ]
+    return result
+
+
+def fetch_one_hk(code: str) -> dict | None:
+    """港股估值分位：百度股市通历史 PE(TTM)/市净率（近五年，自算分位）"""
+    import time
+
+    def _fetch(indicator: str):
+        last_err: Exception | None = None
+        for attempt in range(3):  # 百度接口偶发 DNS 抖动，重试兜底
+            try:
+                return ak.stock_hk_valuation_baidu(symbol=code, indicator=indicator, period="近五年")
+            except Exception as e:
+                last_err = e
+                time.sleep(2 * (attempt + 1))
+        raise last_err if last_err else RuntimeError("unknown fetch error")
+
+    try:
+        pe_df = _fetch("市盈率(TTM)")
+        try:
+            pb_df = _fetch("市净率")
+        except Exception:
+            pb_df = None
+        if pe_df is None or pe_df.empty:
+            return None
+
+        # 以 PE 序列为主轴，PB 按日期对齐
+        pe_s = pe_df.set_index(pd.to_datetime(pe_df["date"]))["value"].astype(float)
+        pb_s = (pb_df.set_index(pd.to_datetime(pb_df["date"]))["value"].astype(float)
+                if pb_df is not None and not pb_df.empty else pd.Series(dtype=float))
+
+        idx = pe_s.index
+        pe_vals = pe_s.reindex(idx).to_numpy()
+        pb_vals = pb_s.reindex(idx).to_numpy()
+
+        # 现价（HKD）：腾讯行情字段 3
+        cur_price = None
+        try:
+            import urllib.request
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            txt = opener.open(f"https://qt.gtimg.cn/q=hk{code}", timeout=8).read().decode("gbk")
+            fields = txt.split('"')[1].split("~")
+            if len(fields) > 3 and fields[3]:
+                cur_price = float(fields[3])
+        except Exception:
+            pass
+
+        return _pct_result(code, idx, pe_vals, pb_vals, cur_price)
+    except Exception as e:
+        print(f"[warn] {code}(HK): {e}", file=sys.stderr)
+        return None
+
+
 def fetch_one(code: str) -> dict | None:
-    """获取单只股票的历史估值 + 分位"""
+    """获取单只股票的历史估值 + 分位（A股走东财，港股走百度）"""
+    if is_hk(code):
+        return fetch_one_hk(code)
     try:
         df = ak.stock_value_em(symbol=code)
         if df is None or df.empty:
@@ -109,7 +213,8 @@ def main():
     codes = sys.argv[1:] if len(sys.argv) > 1 else []
 
     if not codes:
-        # 优先从财务缓存取默认股票列表（研究池）
+        # 默认清单 = 研究池(财务缓存) ∪ 当前持仓（保证持仓股必有分位数据，
+        # 港股持仓经 fetch_one_hk 自动覆盖）
         fin_file = Path(__file__).resolve().parent.parent / "data" / "financials_cache.json"
         if fin_file.exists():
             try:
@@ -120,6 +225,14 @@ def main():
         if not codes:
             codes = ["600519", "000858", "600036", "601318", "000333",
                      "600900", "000651", "600887", "000538", "002415"]
+        try:
+            pf_file = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
+            for p in json.loads(pf_file.read_text()):
+                c = str(p.get("code") or p.get("stockCode") or "")
+                if c and c not in codes:
+                    codes.append(c)
+        except Exception:
+            pass
 
     data = {}
     for code in codes:
