@@ -69,9 +69,9 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
   // 监听股票代码输入 → 查询行情+估值 → 生成建议
   const adviceTimer = useMemo(() => ({ current: null as ReturnType<typeof setTimeout> | null }), []);
   const handleCodeChange = (value: string) => {
-    const code = (value ?? "").replace(/\D/g, "").slice(0, 6);
+    const code = (value ?? "").replace(/\D/g, "").slice(0, 6); // A股6位/港股5位
     if (adviceTimer.current) clearTimeout(adviceTimer.current);
-    if (code.length !== 6) {
+    if (code.length !== 5 && code.length !== 6) {
       setAdvice(null);
       setAdviceCode("");
       return;
@@ -479,8 +479,15 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         width={460}
       >
         <Form form={addForm} layout="vertical" size="small">
-          <Form.Item name="stockCode" label="股票代码" rules={[{ required: true, message: "请输入6位代码" }]}>
-            <Input placeholder="600519" maxLength={6} onChange={(e) => handleCodeChange(e.target.value)} />
+          <Form.Item
+            name="stockCode"
+            label="股票代码"
+            rules={[
+              { required: true, message: "请输入代码" },
+              { pattern: /^\d{5,6}$/, message: "A股6位 / 港股5位" },
+            ]}
+          >
+            <Input placeholder="600519 / 01810" maxLength={6} onChange={(e) => handleCodeChange(e.target.value)} />
           </Form.Item>
           <Form.Item name="stockName" label="股票名称（自动填充，可选）">
             <Input placeholder="自动从行情获取" />
