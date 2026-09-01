@@ -6,15 +6,17 @@
 import type { StockData } from "./types";
 
 // ─── 评分权重 ───────────────────────────────────────────────
-const WEIGHTS = {
-  dividendYield: 0.20,   // 股息率（略降，但仍重要）
-  roe: 0.15,             // ROE（部分让给 ROIC）
-  safety: 0.20,          // 安全边际
-  debtRatio: 0.05,       // 负债率（降，已有 ROIC 覆盖风险维度）
-  pe: 0.15,              // PE（降）
-  fcfToNetProfit: 0.10,  // 盈利质量（新增）
-  roic: 0.10,            // 投入资本回报率（新增）
-  grossMargin: 0.05,     // 毛利率（新增）
+// 缺失数据的维度不参与加权（剩余权重归一化），避免港股/金融股被系统性压分。
+const WEIGHTS: Record<keyof ScoreResult["breakdown"], number> = {
+  dividendYield: 0.15,        // 股息率
+  roe: 0.15,                  // ROE
+  safety: 0.20,               // 安全边际（格雷厄姆核心）
+  valuationPercentile: 0.10,  // 估值分位（PE 为主、PB 兜底，与交易建议引擎同口径）
+  debtRatio: 0.05,            // 负债率（越低越好）
+  pe: 0.10,                   // 绝对 PE（分位维度补足估值视角）
+  fcfToNetProfit: 0.10,       // 盈利质量
+  roic: 0.10,                 // 投入资本回报率
+  grossMargin: 0.05,          // 毛利率
 };
 
 // ─── 单项评分函数（每个 0-100） ────────────────────────────
@@ -94,20 +96,41 @@ function scoreGrossMargin(v: number | null): number {
   return 0;
 }
 
+/**
+ * 估值分位评分：融合分位越低越好（历史低位 = 高分）。
+ * 口径与 trade-advice.ts 完全一致：PE 为主、亏损股 PE 分位不可用回落 PB、齐备时 6:4 融合。
+ * 线性映射：分位 0% → 100 分，100% → 0 分。
+ */
+function scoreValuationPercentile(
+  valuation: { pe_pct_5y?: number; pb_pct_5y?: number } | undefined,
+  pe: number | null
+): number | null {
+  if (!valuation) return null;
+  const pePct = valuation.pe_pct_5y ?? null;
+  const pbPct = valuation.pb_pct_5y ?? null;
+  const effPePct = pe != null && pe > 0 ? pePct : null;
+  const blended =
+    effPePct != null && pbPct != null ? effPePct * 0.6 + pbPct * 0.4
+    : (effPePct ?? pbPct);
+  if (blended == null) return null;
+  return Math.max(0, Math.min(100, 100 - blended));
+}
+
 // ─── 综合评分 ───────────────────────────────────────────────
 
 export interface ScoreResult {
   total: number;
   grade: ScoreGrade;
   breakdown: {
-    dividendYield: number;
-    roe: number;
-    safety: number;
-    debtRatio: number;
-    pe: number;
-    fcfToNetProfit: number;
-    roic: number;
-    grossMargin: number;
+    dividendYield: number | null;
+    roe: number | null;
+    safety: number | null;
+    valuationPercentile: number | null;
+    debtRatio: number | null;
+    pe: number | null;
+    fcfToNetProfit: number | null;
+    roic: number | null;
+    grossMargin: number | null;
   };
 }
 
@@ -120,51 +143,55 @@ function toGrade(score: number): ScoreGrade {
   return "较差";
 }
 
-/** 计算单只股票的综合评分 */
-export function computeScore(stock: StockData): ScoreResult {
+/**
+ * 计算单只股票的综合评分。
+ * valuation 可选：传入后启用估值分位维度（推荐，与交易建议引擎口径一致）。
+ * 数据缺失（null）的维度不参与加权，剩余维度权重归一化——
+ * 港股（无负债率/FCF/ROIC/毛利率）与金融股（负债率特殊）不再被系统性压分。
+ */
+export function computeScore(stock: StockData, valuation?: { pe_pct_5y?: number; pb_pct_5y?: number }): ScoreResult {
   const { fundamentals, safetyScore } = stock;
+  const pe = fundamentals.pe;
 
-  const ds = scoreDividendYield(fundamentals.dividendYield);
-  const rs = scoreROE(fundamentals.roe);
-  const ss = scoreSafety(safetyScore?.score);
-  const drs = scoreDebtRatio(fundamentals.debtRatio);
-  const ps = scorePE(fundamentals.pe);
-  const fs = scoreFcfToNetProfit(fundamentals.fcfToNetProfit);
-  const ris = scoreROIC(fundamentals.roic);
-  const gs = scoreGrossMargin(fundamentals.grossMargin);
+  // 各维度打分；null = 数据缺失 → 跳过该项（区分「缺数据」与「得 0 分」）
+  const parts: { key: keyof ScoreResult["breakdown"]; score: number | null }[] = [
+    { key: "dividendYield", score: fundamentals.dividendYield == null ? null : scoreDividendYield(fundamentals.dividendYield) },
+    { key: "roe", score: fundamentals.roe == null ? null : scoreROE(fundamentals.roe) },
+    { key: "safety", score: safetyScore?.score == null ? null : scoreSafety(safetyScore.score) },
+    { key: "valuationPercentile", score: scoreValuationPercentile(valuation, pe) },
+    { key: "debtRatio", score: fundamentals.debtRatio == null ? null : scoreDebtRatio(fundamentals.debtRatio) },
+    // PE：null = 缺数据跳过；<=0 = 亏损是明确负面信号，计 0 分（估值分位维度已有 PB 兜底）
+    { key: "pe", score: pe == null ? null : scorePE(pe) },
+    { key: "fcfToNetProfit", score: fundamentals.fcfToNetProfit == null ? null : scoreFcfToNetProfit(fundamentals.fcfToNetProfit) },
+    { key: "roic", score: fundamentals.roic == null ? null : scoreROIC(fundamentals.roic) },
+    { key: "grossMargin", score: fundamentals.grossMargin == null ? null : scoreGrossMargin(fundamentals.grossMargin) },
+  ];
 
-  const total = Math.round(
-    ds * WEIGHTS.dividendYield +
-    rs * WEIGHTS.roe +
-    ss * WEIGHTS.safety +
-    drs * WEIGHTS.debtRatio +
-    ps * WEIGHTS.pe +
-    fs * WEIGHTS.fcfToNetProfit +
-    ris * WEIGHTS.roic +
-    gs * WEIGHTS.grossMargin
-  );
+  let weighted = 0;
+  let weightSum = 0;
+  for (const p of parts) {
+    if (p.score == null) continue;
+    weighted += p.score * WEIGHTS[p.key];
+    weightSum += WEIGHTS[p.key];
+  }
+  const total = weightSum > 0 ? Math.round(weighted / weightSum) : 0;
 
-  return {
-    total,
-    grade: toGrade(total),
-    breakdown: {
-      dividendYield: Math.round(ds),
-      roe: Math.round(rs),
-      safety: Math.round(ss),
-      debtRatio: Math.round(drs),
-      pe: Math.round(ps),
-      fcfToNetProfit: Math.round(fs),
-      roic: Math.round(ris),
-      grossMargin: Math.round(gs),
-    },
-  };
+  const breakdown = {} as ScoreResult["breakdown"];
+  for (const p of parts) {
+    breakdown[p.key] = p.score == null ? null : Math.round(p.score);
+  }
+
+  return { total, grade: toGrade(total), breakdown };
 }
 
-/** 批量计算所有股票评分 */
-export function computeAllScores(data: StockData[]): Map<string, ScoreResult> {
+/** 批量计算所有股票评分（valuations: code → 估值分位数据，可选） */
+export function computeAllScores(
+  data: StockData[],
+  valuations?: Map<string, { pe_pct_5y?: number; pb_pct_5y?: number }>
+): Map<string, ScoreResult> {
   const map = new Map<string, ScoreResult>();
   for (const stock of data) {
-    map.set(stock.quote.code, computeScore(stock));
+    map.set(stock.quote.code, computeScore(stock, valuations?.get(stock.quote.code)));
   }
   return map;
 }

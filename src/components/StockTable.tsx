@@ -243,9 +243,10 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: (
         <Tooltip title={
           <div style={{ fontSize: 11, lineHeight: 1.8 }}>
-            <div>股息率 25% + ROE 20% + 安全边际 25%</div>
-            <div>PE 20% + 负债率 10%（越低越好）</div>
-            <div style={{ marginTop: 4, color: "#a1a1aa" }}>← 旧版权重（新版含 FCF/ROIC/毛利率）</div>
+            <div>安全边际 20% · 股息率 15% · ROE 15%</div>
+            <div>估值分位 10% · PE 10% · 盈利质量(FCF) 10% · ROIC 10%</div>
+            <div>负债率 5% · 毛利率 5%</div>
+            <div style={{ marginTop: 4, color: "#a1a1aa" }}>数据缺失的维度跳过（剩余权重归一化），港股/金融股不压分</div>
           </div>
         } color="#27272a">
           <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help" }}>
@@ -265,13 +266,14 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         if (!s) return <span style={{ color: "var(--text-tertiary)", fontSize: 12 }}>--</span>;
         const color = s.total >= 70 ? "var(--green)" : s.total >= 50 ? "var(--gold)" : "var(--red)";
         const bg = s.total >= 70 ? "rgba(34,197,94,0.12)" : s.total >= 50 ? "rgba(217,119,6,0.12)" : "rgba(239,68,68,0.12)";
+        const fmt = (v: number | null) => (v == null ? "缺" : `${v}分`);
         return (
           <Tooltip title={
             <div style={{ fontSize: 11, lineHeight: 1.8 }}>
-              <div>股息率 {s.breakdown.dividendYield}分 · ROE {s.breakdown.roe}分</div>
-              <div>安全 {s.breakdown.safety}分 · PE {s.breakdown.pe}分</div>
-              <div>负债率 {s.breakdown.debtRatio}分 · FCF/净利 {s.breakdown.fcfToNetProfit}分</div>
-              <div>ROIC {s.breakdown.roic}分 · 毛利率 {s.breakdown.grossMargin}分</div>
+              <div>安全 {fmt(s.breakdown.safety)} · 股息率 {fmt(s.breakdown.dividendYield)} · ROE {fmt(s.breakdown.roe)}</div>
+              <div>估值分位 {fmt(s.breakdown.valuationPercentile)} · PE {fmt(s.breakdown.pe)}</div>
+              <div>FCF/净利 {fmt(s.breakdown.fcfToNetProfit)} · ROIC {fmt(s.breakdown.roic)} · 毛利率 {fmt(s.breakdown.grossMargin)}</div>
+              <div>负债率 {fmt(s.breakdown.debtRatio)}<span style={{ color: "#a1a1aa" }}>（缺=跳过）</span></div>
             </div>
           } color="#27272a">
             <div style={{

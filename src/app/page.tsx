@@ -56,7 +56,7 @@ export default function Home() {
   const [showReport, setShowReport] = useLocalStorage("ts-stock-monitor:showReport", false);
   const [showNotes, setShowNotes] = useState(false);
   const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
-  const [showScore, setShowScore] = useState(false);
+  const [showScore, setShowScore] = useState(true); // 评分列常态化展示
 
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
@@ -97,8 +97,11 @@ export default function Home() {
     return m;
   }, [data]);
 
-  // ── 综合评分 ──────────────────────────────────────────────
-  const scores = useMemo(() => computeAllScores(data), [data]);
+  // ── 综合评分（含估值分位维度，与交易建议引擎口径一致） ──────
+  const scores = useMemo(
+    () => computeAllScores(data, valuationData),
+    [data, valuationData]
+  );
 
   // ── 筛选后数据 ────────────────────────────────────────────
   const filteredCodes = useMemo(
