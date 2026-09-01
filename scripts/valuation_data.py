@@ -149,11 +149,24 @@ def fetch_one(code: str) -> dict | None:
     """获取单只股票的历史估值 + 分位（A股走东财，港股走百度）"""
     if is_hk(code):
         return fetch_one_hk(code)
-    try:
-        df = ak.stock_value_em(symbol=code)
-        if df is None or df.empty:
-            return None
+    # 东财接口无内置重试，DNS/网络抖动一次就废（美的曾因此 27 天未更新），显式重试+退避
+    df = None
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            df = ak.stock_value_em(symbol=code)
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(2 * (attempt + 1))
+    if df is None:
+        if last_err:
+            print(f"[warn] {code}: 东财估值接口重试 3 次仍失败: {last_err}", file=sys.stderr)
+        return None
+    if df.empty:
+        return None
 
+    try:
         df["数据日期"] = pd.to_datetime(df["数据日期"])
         df = df.sort_values("数据日期").reset_index(drop=True)
 

@@ -7,16 +7,17 @@ import type { StockData } from "./types";
 
 // ─── 评分权重 ───────────────────────────────────────────────
 // 缺失数据的维度不参与加权（剩余权重归一化），避免港股/金融股被系统性压分。
+// 估值维度 = 估值分位（PE 为主/PB 兜底 6:4 融合）优先，无分位数据时退回绝对 PE——
+// 两者同源不重复计分（分位本身就是 PE 相对自身历史的定位）。
 const WEIGHTS: Record<keyof ScoreResult["breakdown"], number> = {
-  dividendYield: 0.15,        // 股息率
-  roe: 0.15,                  // ROE
-  safety: 0.20,               // 安全边际（格雷厄姆核心）
-  valuationPercentile: 0.10,  // 估值分位（PE 为主、PB 兜底，与交易建议引擎同口径）
-  debtRatio: 0.05,            // 负债率（越低越好）
-  pe: 0.10,                   // 绝对 PE（分位维度补足估值视角）
-  fcfToNetProfit: 0.10,       // 盈利质量
-  roic: 0.10,                 // 投入资本回报率
-  grossMargin: 0.05,          // 毛利率
+  dividendYield: 0.20,   // 股息率（价值派核心信号，权重最高之一）
+  roe: 0.15,             // ROE
+  safety: 0.20,          // 安全边际（格雷厄姆核心）
+  valuation: 0.15,       // 估值（分位优先、PE 绝对兜底，单一维度不重复计 PE）
+  debtRatio: 0.05,       // 负债率（越低越好）
+  fcfToNetProfit: 0.10,  // 盈利质量
+  roic: 0.10,            // 投入资本回报率
+  grossMargin: 0.05,     // 毛利率
 };
 
 // ─── 单项评分函数（每个 0-100） ────────────────────────────
@@ -125,9 +126,8 @@ export interface ScoreResult {
     dividendYield: number | null;
     roe: number | null;
     safety: number | null;
-    valuationPercentile: number | null;
+    valuation: number | null;   // 估值（分位优先 / PE 绝对兜底）
     debtRatio: number | null;
-    pe: number | null;
     fcfToNetProfit: number | null;
     roic: number | null;
     grossMargin: number | null;
@@ -154,14 +154,14 @@ export function computeScore(stock: StockData, valuation?: { pe_pct_5y?: number;
   const pe = fundamentals.pe;
 
   // 各维度打分；null = 数据缺失 → 跳过该项（区分「缺数据」与「得 0 分」）
+  const pctScore = scoreValuationPercentile(valuation, pe);
   const parts: { key: keyof ScoreResult["breakdown"]; score: number | null }[] = [
     { key: "dividendYield", score: fundamentals.dividendYield == null ? null : scoreDividendYield(fundamentals.dividendYield) },
     { key: "roe", score: fundamentals.roe == null ? null : scoreROE(fundamentals.roe) },
     { key: "safety", score: safetyScore?.score == null ? null : scoreSafety(safetyScore.score) },
-    { key: "valuationPercentile", score: scoreValuationPercentile(valuation, pe) },
+    // 估值单一维度：分位优先（含 PB 视角），无分位数据退回绝对 PE；PE 亏损（<=0）计 0 分
+    { key: "valuation", score: pctScore ?? (pe == null ? null : scorePE(pe)) },
     { key: "debtRatio", score: fundamentals.debtRatio == null ? null : scoreDebtRatio(fundamentals.debtRatio) },
-    // PE：null = 缺数据跳过；<=0 = 亏损是明确负面信号，计 0 分（估值分位维度已有 PB 兜底）
-    { key: "pe", score: pe == null ? null : scorePE(pe) },
     { key: "fcfToNetProfit", score: fundamentals.fcfToNetProfit == null ? null : scoreFcfToNetProfit(fundamentals.fcfToNetProfit) },
     { key: "roic", score: fundamentals.roic == null ? null : scoreROIC(fundamentals.roic) },
     { key: "grossMargin", score: fundamentals.grossMargin == null ? null : scoreGrossMargin(fundamentals.grossMargin) },
@@ -174,7 +174,12 @@ export function computeScore(stock: StockData, valuation?: { pe_pct_5y?: number;
     weighted += p.score * WEIGHTS[p.key];
     weightSum += WEIGHTS[p.key];
   }
-  const total = weightSum > 0 ? Math.round(weighted / weightSum) : 0;
+  // 最低覆盖防线：可用权重 <40% 时数据不足以代表全局（如亏损股只剩 PB 分位一个维度），
+  // 不归一化（未覆盖部分记 0 分），避免"单维度=总分"造成虚高误导。
+  const MIN_WEIGHT_COVERAGE = 0.4;
+  const total = weightSum >= MIN_WEIGHT_COVERAGE
+    ? Math.round(weighted / weightSum)
+    : Math.round(weighted);
 
   const breakdown = {} as ScoreResult["breakdown"];
   for (const p of parts) {

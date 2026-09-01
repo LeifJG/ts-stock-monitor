@@ -243,8 +243,8 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       title: (
         <Tooltip title={
           <div style={{ fontSize: 11, lineHeight: 1.8 }}>
-            <div>安全边际 20% · 股息率 15% · ROE 15%</div>
-            <div>估值分位 10% · PE 10% · 盈利质量(FCF) 10% · ROIC 10%</div>
+            <div>安全边际 20% · 股息率 20% · ROE 15%</div>
+            <div>估值 15%（分位优先/PE兜底） · 盈利质量(FCF) 10% · ROIC 10%</div>
             <div>负债率 5% · 毛利率 5%</div>
             <div style={{ marginTop: 4, color: "#a1a1aa" }}>数据缺失的维度跳过（剩余权重归一化），港股/金融股不压分</div>
           </div>
@@ -271,7 +271,7 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           <Tooltip title={
             <div style={{ fontSize: 11, lineHeight: 1.8 }}>
               <div>安全 {fmt(s.breakdown.safety)} · 股息率 {fmt(s.breakdown.dividendYield)} · ROE {fmt(s.breakdown.roe)}</div>
-              <div>估值分位 {fmt(s.breakdown.valuationPercentile)} · PE {fmt(s.breakdown.pe)}</div>
+              <div>估值 {fmt(s.breakdown.valuation)}<span style={{ color: "#a1a1aa" }}>（分位优先/PE兜底）</span></div>
               <div>FCF/净利 {fmt(s.breakdown.fcfToNetProfit)} · ROIC {fmt(s.breakdown.roic)} · 毛利率 {fmt(s.breakdown.grossMargin)}</div>
               <div>负债率 {fmt(s.breakdown.debtRatio)}<span style={{ color: "#a1a1aa" }}>（缺=跳过）</span></div>
             </div>
