@@ -15,6 +15,7 @@ import { useDividendHistory } from "@/hooks/useDividendHistory";
 import { useAlertSync } from "@/hooks/useAlertSync";
 import { useValuationData } from "@/hooks/useValuationData";
 import { useFxRate } from "@/hooks/useFxRate";
+import { usePortfolio } from "@/hooks/usePortfolio";
 import StockList from "@/components/StockList";
 import StockTable from "@/components/StockTable";
 import IndexCards from "@/components/IndexCards";
@@ -61,12 +62,29 @@ export default function Home() {
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [indicesLoading, setIndicesLoading] = useState(true);
 
-  const { data, loading, error, refetch, lastUpdated } = useStockData(watchlist);
+  const { positions } = usePortfolio(); // 只读持仓清单：用于合并进自选展示
+
+  // ── 统一清单：自选 ∪ 持仓（持仓股默认自动进自选，展示层合并不写 localStorage，
+  //    银河同步增删持仓时表格自动跟随，不会残留） ──────────────────
+  const allCodes = useMemo(() => {
+    const set = new Set(watchlist);
+    for (const p of positions) {
+      if (p.stockCode) set.add(p.stockCode);
+    }
+    return Array.from(set);
+  }, [watchlist, positions]);
+  const portfolioOnlyCodes = useMemo(
+    () => new Set(allCodes.filter((c) => !watchlist.includes(c))),
+    [allCodes, watchlist]
+  );
+
+  const { data, loading, error, refetch, lastUpdated } = useStockData(allCodes);
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
   useAlertSync(rules);
-  const { trades: insiderTrades } = useInsiderData(watchlist);
-  const { data: dividendHistory } = useDividendHistory(watchlist);
-  const { data: valuationData } = useValuationData(watchlist);
+
+  const { trades: insiderTrades } = useInsiderData(allCodes);
+  const { data: dividendHistory } = useDividendHistory(allCodes);
+  const { data: valuationData } = useValuationData(allCodes);
 
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
@@ -132,10 +150,10 @@ export default function Home() {
     if (clean.length >= 1 && clean.length < 5) clean = clean.padStart(5, "0"); // 港股短码补零：700→00700
     // A股6位，港股通5位
     const validLen = clean.length === 5 || clean.length === 6;
-    if (!validLen || watchlist.includes(clean)) return;
+    if (!validLen || allCodes.includes(clean)) return; // 已在自选或持仓中
     setWatchlist((prev) => [...prev, clean]);
     setNewCode("");
-  }, [newCode, watchlist, setWatchlist, setNewCode]);
+  }, [newCode, allCodes, setWatchlist, setNewCode]);
 
   const removeStock = useCallback((code: string) => {
     setWatchlist((prev) => prev.filter((c) => c !== code));
@@ -192,14 +210,14 @@ export default function Home() {
       {/* ═══ 分红日历 ═══ */}
       {showCalendar && (
         <section style={{ marginBottom: 16 }}>
-          <DividendCalendar watchlist={watchlist} />
+          <DividendCalendar watchlist={allCodes} />
         </section>
       )}
 
       {/* ═══ 行业分散度 ═══ */}
       {showIndustry && (
         <section style={{ marginBottom: 16 }}>
-          <IndustryDiversity watchlist={watchlist} />
+          <IndustryDiversity watchlist={allCodes} />
         </section>
       )}
 
@@ -244,12 +262,26 @@ export default function Home() {
           <Input placeholder="输入代码：A股6位 / 港股5位，如 00700" value={newCode} onChange={(e) => setNewCode(e.target.value)} onPressEnter={addStock} style={{ width: 240 }} size="small" allowClear />
           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={addStock} disabled={!newCode.trim()}>添加</Button>
           <Flex wrap="wrap" gap={4}>
-            {watchlist.map((code) => (
-              <Tag key={code} closable onClose={() => removeStock(code)} style={{ fontFamily: "var(--font-geist-mono)", borderRadius: 9999 }}>{code}</Tag>
-            ))}
+            {allCodes.map((code) => {
+              const fromPortfolio = portfolioOnlyCodes.has(code); // 仅持仓来源：不可移除（去持仓面板管理）
+              return (
+                <Tag
+                  key={code}
+                  closable={!fromPortfolio}
+                  onClose={() => removeStock(code)}
+                  style={{
+                    fontFamily: "var(--font-geist-mono)",
+                    borderRadius: 9999,
+                    ...(fromPortfolio ? { borderColor: "var(--gold)", color: "var(--gold)" } : {}),
+                  }}
+                >
+                  {fromPortfolio && <span style={{ marginRight: 2 }}>💼</span>}{code}
+                </Tag>
+              );
+            })}
           </Flex>
           {!loading && data.length > 0 && (
-            <span style={{ color: "var(--text-tertiary)", fontSize: 12, marginLeft: "auto" }}>{data.length} / {watchlist.length} 只</span>
+            <span style={{ color: "var(--text-tertiary)", fontSize: 12, marginLeft: "auto" }}>{data.length} / {allCodes.length} 只</span>
           )}
         </Flex>
       </section>
