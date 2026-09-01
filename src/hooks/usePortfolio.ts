@@ -80,14 +80,21 @@ async function restoreFromServer(setPositions: (p: Position[]) => void): Promise
  *                    usePortfolioStocks 拉取并合并
  */
 export function usePortfolio(externalMap?: Map<string, StockData>) {
-  const [positions, setPositions] = useState<Position[]>(loadPositions);
+  // hydration 安全：首渲染固定空数组（与 SSR 一致），mount 后再读 localStorage。
+  // 若惰性初始化直读 localStorage，PortfolioMiniCard 等组件首渲染与 SSR HTML
+  // 不匹配 → React #418 → 事件树与 DOM 脱节（表现为添加自选后表格不刷新）。
+  const [positions, setPositions] = useState<Position[]>([]);
 
-  // 挂载时 localStorage 为空 → 从服务端回灌（每页面加载最多尝试一次）
+  // 挂载后同步：读 localStorage 真实持仓；为空 → 从服务端回灌（每页面加载最多尝试一次）
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    if (typeof window !== "undefined" && !localStorage.getItem(STORAGE_KEY)) {
+    if (typeof window === "undefined") return;
+    const loaded = loadPositions();
+    if (loaded.length > 0) {
+      setPositions(loaded);
+    } else if (!localStorage.getItem(STORAGE_KEY)) {
       restoreFromServer(setPositions);
     }
   }, []);
