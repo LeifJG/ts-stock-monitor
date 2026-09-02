@@ -12,7 +12,9 @@
 # ============================================================
 set -uo pipefail
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET="weixin:o9cq80_yXOgPn_xv2CUZ6fUeLeeU@im.wechat"
+# 推送目标不进仓库：优先环境变量 ALERT_TARGET，否则读 cache/push_target.txt
+TARGET="${ALERT_TARGET:-$(cat "$BASE/cache/push_target.txt" 2>/dev/null || true)}"
+[ -z "$TARGET" ] && { echo "[alert_push] 未配置推送目标（cache/push_target.txt）"; exit 1; }
 HERMES="$HOME/.local/bin/hermes"
 mkdir -p "$BASE/cache"
 

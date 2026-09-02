@@ -5,6 +5,7 @@
 # 被 systemd ExecStartPost 调用，异步等服务 ready 后发通知。
 
 set -euf -o pipefail
+BASE="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 获取 WSL 真实 IP
 WSL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -29,9 +30,10 @@ done
 
 # 发微信通知（重试最多60秒，等网关就绪）
 NOTIFY_SCRIPT="$HOME/.local/bin/hermes"
-if [ -x "$NOTIFY_SCRIPT" ]; then
+TARGET="${ALERT_TARGET:-$(cat "$BASE/cache/push_target.txt" 2>/dev/null || true)}"
+if [ -x "$NOTIFY_SCRIPT" ] && [ -n "$TARGET" ]; then
   for i in $(seq 1 15); do
-    if "$NOTIFY_SCRIPT" send --to weixin:o9cq80_yXOgPn_xv2CUZ6fUeLeeU@im.wechat \
+    if "$NOTIFY_SCRIPT" send --to "$TARGET" \
       "📊 ts-stock-monitor 已启动 ✅
 $URL 可访问" --quiet 2>/dev/null; then
       exit 0
@@ -39,7 +41,7 @@ $URL 可访问" --quiet 2>/dev/null; then
     sleep 4
   done
   # 最后一次尝试，失败也记录下来
-  "$NOTIFY_SCRIPT" send --to weixin:o9cq80_yXOgPn_xv2CUZ6fUeLeeU@im.wechat \
+  "$NOTIFY_SCRIPT" send --to "$TARGET" \
     "📊 ts-stock-monitor 已启动 ✅
 $URL 可访问" 2>&1 || true
 fi
