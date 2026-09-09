@@ -1,0 +1,14 @@
+# /home/lijg/.config/systemd/user/ts-stock-periodic-refresh.timer
+[Unit]
+Description=ts-stock-monitor 低频数据刷新定时器（每周一 08:10 + 每月1日 08:20）
+
+[Timer]
+# 周更档：周一早 08:10（开市前，避开 08:00 拥堵）
+OnCalendar=Mon *-*-* 08:10:00
+# 月更档：每月 1 日 08:20（护城河等慢变量，财报季后数据更完整）
+OnCalendar=*-*-01 08:20:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

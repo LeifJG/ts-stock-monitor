@@ -1,0 +1,10 @@
+# /home/lijg/.config/systemd/user/ts-stock-periodic-refresh.service
+[Unit]
+Description=ts-stock-monitor 低频数据刷新（股东户数/恐慌技术/股息率/护城河全链）
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/lijg/ts-stock-monitor
+ExecStart=/home/lijg/ts-stock-monitor/scripts/periodic_refresh.sh
+TimeoutStartSec=3600
