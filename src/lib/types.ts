@@ -69,11 +69,25 @@ export interface StockFundamentals {
 export interface InsiderTrade {
   date: string;          // 变动日期
   name: string;          // 高管姓名
+  person?: string;       // 股东名称（东财口径）
   position: string;      // 职务
   changeType: "增持" | "减持" | "未知";
-  volume: number;        // 变动数量（股）
-  price: number;         // 变动均价
-  ratio: number;         // 占流通股比例 (%)
+  volume: number;        // 变动数量（万股）
+  price?: number;        // 变动均价
+  ratio: number;         // 占总股本比例 (%)
+  holdAfter?: number;    // 变动后持股总数（万股）
+  startDate?: string;    // 变动开始日
+  endDate?: string;      // 变动截止日
+  pubDate?: string;      // 公告日
+}
+
+/** 港股公司回购记录 */
+export interface InsiderBuyback {
+  date: string;          // 回购日
+  volume: number;        // 数量（万股）
+  avgPrice: number;      // 均价
+  amount: number;        // 金额（万港元）
+  currency: string;
 }
 
 /** 分红记录 */
@@ -97,6 +111,8 @@ export interface Position {
   cost?: number;                  // 兼容同步数据：总成本
   buyDate?: string;               // 首次买入日期
   dividends?: DividendRecord[];   // 分红记录（同步数据可能没有）
+  baseShares?: number;            // 基准股数（首次建仓量，补仓额度/金字塔档位的锚点）
+  lastAddPrice?: number;          // 上次加仓成交价（补仓间距控制）
   addedAt?: string;               // 同步时间
   note?: string;                  // 备注
 }

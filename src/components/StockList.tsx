@@ -5,7 +5,7 @@
 "use client";
 
 import { Flex, Empty, Spin, Alert } from "antd";
-import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
+import type { StockData, AlertTrigger, InsiderTrade, InsiderBuyback } from "@/lib/types";
 import StockCard from "./StockCard";
 
 interface StockListProps {
@@ -14,10 +14,11 @@ interface StockListProps {
   loading: boolean;
   error: string | null;
   insiderTrades: Map<string, InsiderTrade[]>;
+  insiderBuybacks?: Map<string, InsiderBuyback[]>;
   dividendHistory: Map<string, any>;
 }
 
-export default function StockList({ data, triggers, loading, error, insiderTrades, dividendHistory }: StockListProps) {
+export default function StockList({ data, triggers, loading, error, insiderTrades, insiderBuybacks, dividendHistory }: StockListProps) {
   if (loading && data.length === 0) {
     return (
       <Flex justify="center" style={{ padding: 60 }}>
@@ -49,6 +50,7 @@ export default function StockList({ data, triggers, loading, error, insiderTrade
             data={item}
             alerts={triggers.filter((t) => t.stockCode === item.quote.code)}
             trades={insiderTrades.get(item.quote.code)}
+            buybacks={insiderBuybacks?.get(item.quote.code)}
             dividend={dividendHistory.get(item.quote.code)}
           />
         </div>

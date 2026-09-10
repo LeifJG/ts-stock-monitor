@@ -10,7 +10,7 @@ import {
   ArrowUpOutlined, ArrowDownOutlined,
   WarningOutlined, DownOutlined, UpOutlined,
 } from "@ant-design/icons";
-import type { StockData, AlertTrigger, InsiderTrade } from "@/lib/types";
+import type { StockData, AlertTrigger, InsiderTrade, InsiderBuyback } from "@/lib/types";
 import { fearGaugeColor, safetyScoreColor } from "@/lib/indicators";
 import InsiderBadge from "./InsiderBadge";
 import DividendBadge from "./DividendBadge";
@@ -20,6 +20,7 @@ interface StockCardProps {
   data: StockData;
   alerts: AlertTrigger[];
   trades?: InsiderTrade[];
+  buybacks?: InsiderBuyback[];
   dividend?: any;
 }
 
@@ -51,7 +52,7 @@ function MetricItem({ label, value, highlight, tooltip }: {
   return el;
 }
 
-export default function StockCard({ data, alerts, trades, dividend }: StockCardProps) {
+export default function StockCard({ data, alerts, trades, buybacks, dividend }: StockCardProps) {
   const { quote, fundamentals, safetyScore, fearGauge } = data;
   const isUp = quote.changePercent > 0;
   const isDown = quote.changePercent < 0;
@@ -111,6 +112,7 @@ export default function StockCard({ data, alerts, trades, dividend }: StockCardP
           </Tooltip>
         )}
         {trades && trades.length > 0 && <InsiderBadge trades={trades} />}
+        {buybacks && buybacks.length > 0 && <InsiderBadge buybacks={buybacks} stockName={data.quote.name} />}
         {dividend && <DividendBadge data={dividend} />}
       </Flex>
 

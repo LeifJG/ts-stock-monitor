@@ -82,7 +82,7 @@ export default function Home() {
   const { rules, triggers, addRule, removeRule, toggleRule, evaluate } = useAlerts();
   useAlertSync(rules);
 
-  const { trades: insiderTrades } = useInsiderData(allCodes);
+  const { trades: insiderTrades, buybacks: insiderBuybacks } = useInsiderData(allCodes);
   const { data: dividendHistory } = useDividendHistory(allCodes);
   const { data: valuationData } = useValuationData(allCodes);
 
@@ -319,6 +319,7 @@ export default function Home() {
           loading={loading}
           error={error}
           insiderTrades={insiderTrades}
+          insiderBuybacks={insiderBuybacks}
           dividendHistory={dividendHistory}
           valuationData={valuationData}
           scores={scores}
@@ -326,7 +327,7 @@ export default function Home() {
           onToggleScore={() => setShowScore(!showScore)}
         />
       ) : (
-        <StockList data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} dividendHistory={dividendHistory} />
+        <StockList data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} insiderBuybacks={insiderBuybacks} dividendHistory={dividendHistory} />
       )}
     </div>
   );

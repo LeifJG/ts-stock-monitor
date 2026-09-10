@@ -4,12 +4,12 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { ReactNode } from "react";
-import { Table, Input, Tooltip, Tag, Flex } from "antd";
+import { Table, Input, Tooltip, Tag, Flex, Modal } from "antd";
 import { SearchOutlined, StarOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { StockData, AlertTrigger, SortField, SortOrder, InsiderTrade } from "@/lib/types";
+import type { StockData, AlertTrigger, SortField, SortOrder, InsiderTrade, InsiderBuyback } from "@/lib/types";
 import InsiderBadge from "./InsiderBadge";
 import DividendBadge from "./DividendBadge";
 import { PEBadge, DividendYieldBadge, ROEBadge, SafetyBadge } from "./MetricBadges";
@@ -19,6 +19,8 @@ import type { ValuationData } from "@/app/api/valuation/route";
 import ShareholderTrend from "./ShareholderTrend";
 import ValuationBadge from "./ValuationBadge";
 import ValuationPanel from "./ValuationPanel";
+import MoatModal from "./MoatModal";
+import type { MoatSummary } from "./MoatBadge";
 
 // ─── 列头帮助气泡内容 ─────────────────────────────────────────
 
@@ -79,6 +81,7 @@ interface StockTableProps {
   loading: boolean;
   error: string | null;
   insiderTrades: Map<string, InsiderTrade[]>;
+  insiderBuybacks?: Map<string, InsiderBuyback[]>;
   dividendHistory: Map<string, any>;
   valuationData?: Map<string, ValuationData>;
   scores?: Map<string, ScoreResult>;
@@ -86,9 +89,32 @@ interface StockTableProps {
   onToggleScore?: () => void;
 }
 
-export default function StockTable({ data, triggers, loading, error, insiderTrades, dividendHistory, valuationData, scores, showScore, onToggleScore }: StockTableProps) {
+export default function StockTable({ data, triggers, loading, error, insiderTrades, insiderBuybacks, dividendHistory, valuationData, scores, showScore, onToggleScore }: StockTableProps) {
   const [filterText, setFilterText] = useState("");
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
+
+  // ── 护城河数据（全池一次拉取，主表列 + 弹窗共用）────────────
+  const [moatMap, setMoatMap] = useState<Map<string, MoatSummary>>(new Map());
+  const [moatModal, setMoatModal] = useState<{ open: boolean; code: string | null; name: string }>(
+    { open: false, code: null, name: "" }
+  );
+
+  useEffect(() => {
+    fetch("/api/moat")
+      .then((r) => r.json())
+      .then((j) => {
+        const d = j?.data ?? {};
+        const m = new Map<string, MoatSummary>();
+        for (const [code, v] of Object.entries(d)) {
+          const mv = v as { score?: number; ratingLabel?: string; rating?: string };
+          if (mv.score != null && mv.rating) {
+            m.set(code, { score: mv.score, ratingLabel: mv.ratingLabel ?? "", rating: mv.rating });
+          }
+        }
+        setMoatMap(m);
+      })
+      .catch(() => {});
+  }, []);
 
   const triggeredCodes = useMemo(() => new Set(triggers.map((t) => t.stockCode)), [triggers]);
 
@@ -225,7 +251,13 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         {
           key: "insider",
           label: "增减持",
-          value: (r) => <InsiderBadge trades={insiderTrades.get(r.quote.code)} />,
+          value: (r) => (
+            <InsiderBadge
+              trades={insiderTrades.get(r.quote.code)}
+              buybacks={insiderBuybacks?.get(r.quote.code)}
+              stockName={r.quote.name}
+            />
+          ),
         },
       ],
     },
@@ -337,6 +369,28 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
       render: (_, r) => (
         <ValuationBadge valuation={valuationData?.get(r.quote.code)} />
       ),
+    },
+
+    // ── 护城河（评分 + 评级标签，点击弹详情）────────────────────
+    {
+      title: <span style={{ borderBottom: "1px dashed var(--border-color)", cursor: "help", color: "var(--text-secondary)" }}>护城河</span>,
+      key: "moat",
+      width: 100,
+      sorter: (a, b) =>
+        (moatMap.get(a.quote.code)?.score ?? 0) - (moatMap.get(b.quote.code)?.score ?? 0),
+      render: (_, r) => {
+        const m = moatMap.get(r.quote.code);
+        if (!m) return <span style={{ color: "var(--text-tertiary)", fontSize: 11 }}>--</span>;
+        const col = m.rating === "wide" ? "var(--green)" : m.rating === "narrow" ? "var(--blue)" : "var(--text-tertiary)";
+        return (
+          <Tag
+            onClick={() => setMoatModal({ open: true, code: r.quote.code, name: r.quote.name })}
+            style={{ cursor: "pointer", fontSize: 11, borderColor: col, color: col, whiteSpace: "nowrap" }}
+          >
+            {m.score} {m.ratingLabel}
+          </Tag>
+        );
+      },
     },
 
     // ── 分红核心（分红历史 → 展开行） ─────────────────────────
@@ -494,6 +548,14 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           const hasAlert = triggeredCodes.has(record.quote.code);
           return hasAlert ? "ant-table-row-alert" : "";
         }}
+      />
+
+      {/* ═══ 护城河详情弹窗 ═══ */}
+      <MoatModal
+        code={moatModal.code}
+        name={moatModal.name}
+        open={moatModal.open}
+        onClose={() => setMoatModal({ open: false, code: null, name: "" })}
       />
       </div>
     </div>
