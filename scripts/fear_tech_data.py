@@ -68,10 +68,22 @@ def calc_volume_ratio(volumes: list, period: int = 20) -> float:
 
 # ─── K 线获取 ──────────────────────────────────────────────────
 
+# 东财 push2his 接口 2026-09 起对 WSL 直连全部 RST（RemoteDisconnected，Clash 代理也 502），
+# 腾讯 K 线接口 web.ifzq.gtimg.cn 全研究池 8/8 通过（A 股+港股，60 日数据齐），换为腾讯源
+KLINE_HOST = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sym},day,,,80,qfq"
+
+
+def _tencent_symbol(code: str) -> str:
+    """600519 → sh600519 / 000333 → sz000333 / 00700(5位) → hk00700"""
+    if len(code) == 5:  # 港股 5 位码（用户习惯带前导 0）
+        return f"hk{code}"
+    return f"{'sh' if code.startswith('6') else 'sz'}{code}"
+
+
 def fetch_kline(code: str) -> dict:
-    """获取单只股票的 K 线数据，返回技术指标"""
+    """获取单只股票的 K 线数据（腾讯源），返回技术指标"""
     ensure_proxy_env()
-    import akshare as ak
+    import urllib.request
 
     result = {
         "code": code,
@@ -87,26 +99,21 @@ def fetch_kline(code: str) -> dict:
     }
 
     try:
-        # 取 60 个交易日（约 3 个月）确保有足够数据算 RSI 和 MA
-        today = datetime.now()
-        start = (today - timedelta(days=120)).strftime("%Y%m%d")
-        end = today.strftime("%Y%m%d")
-
-        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="")
-
-        if df is None or len(df) < 2:
+        sym = _tencent_symbol(code)
+        url = KLINE_HOST.format(sym=sym)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        raw = urllib.request.urlopen(req, timeout=20).read()
+        data = json.loads(raw)
+        dat = data.get("data", {}).get(sym, {})
+        rows = dat.get("qfqday") or dat.get("day") or []
+        # 行格式: [date, open, close, high, low, volume, ...]（腾讯顺序：开/收/高/低/量）
+        if len(rows) < 2:
             return result
-
-        # 按日期升序（最早的在前）
-        df = df.sort_values("日期")
-
-        closes = df["收盘"].tolist()
-        highs = df["最高"].tolist()
-        lows = df["最低"].tolist()
-        volumes = df["成交量"].tolist()
-
-        if len(closes) < 2:
-            return result
+        rows = sorted(rows, key=lambda r: r[0])
+        closes = [float(r[2]) for r in rows]
+        highs = [float(r[3]) for r in rows]
+        lows = [float(r[4]) for r in rows]
+        volumes = [float(r[5]) if len(r) > 5 else 0.0 for r in rows]
 
         # RSI(14)
         result["rsi_14"] = calc_rsi(closes)
