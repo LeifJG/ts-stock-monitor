@@ -264,33 +264,68 @@ export default function StockCard({ data, alerts, trades, buybacks, dividend }: 
 
 // ─── 恐惧指数条（子组件） ────────────────────────────────────
 
-function FearGaugeBar({ fearGauge }: { fearGauge: { overall: number; label: string; drawdown: number; rsi: number; macd: number } }) {
+function FearGaugeBar({ fearGauge }: { fearGauge: { overall: number; label: string; drawdown: number; rsi: number; macd: number; rsi14?: number; priceVsMa20Pct?: number; volumeRatio?: number; change5dPct?: number; amplitudeRatio?: number } }) {
   const fc = fearColor(fearGauge.overall);
-  return (
-    <div
-      style={{
-        marginTop: 10,
-        borderRadius: 6,
-        padding: "8px 10px",
-        background: fc.bg,
-        border: `1px solid ${fc.bar}`,
-      }}
-    >
-      <Flex align="center" justify="space-between" style={{ marginBottom: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 500, color: fc.text }}>
-          {fearGauge.label}
-        </span>
-        <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-          涨跌{fearGauge.drawdown} · 波动{fearGauge.rsi} · 换手{fearGauge.macd}
-        </span>
-      </Flex>
-      <Progress
-        percent={fearGauge.overall}
-        size="small"
-        showInfo={false}
-        strokeColor={fc.bar}
-        trailColor="var(--border-secondary)"
-      />
+  // 有历史技术指标 → 新版 5 分量 tooltip；否则旧 3 分量
+  const hasTech = fearGauge.rsi14 != null || fearGauge.priceVsMa20Pct != null;
+  const tipContent = (
+    <div style={{ minWidth: 220 }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>恐慌指数 0-100，越高越恐慌（别人恐惧我贪婪 → 低分反而是捡货信号）</div>
+      {hasTech ? (
+        <>
+          <div>综合分 = 5 个技术分量的加权：</div>
+          <div style={{ marginTop: 4 }}>
+            · MA20 偏离 25% —— 价格越低于 20 日线越恐慌（当前 {fearGauge.priceVsMa20Pct ?? "—"}%）
+          </div>
+          <div>· RSI(14) 20% —— 越超卖越恐慌（当前 {fearGauge.rsi14 ?? "—"}）</div>
+          <div>· 量比 20% —— 放量杀跌越猛越恐慌（当前 {fearGauge.volumeRatio ?? "—"}）</div>
+          <div>· 5日涨跌 20% —— 跌得越多越恐慌（当前 {fearGauge.change5dPct ?? "—"}%）</div>
+          <div>· 振幅比 15% —— 日振幅大幅高于 20 日均值越恐慌（当前 {fearGauge.amplitudeRatio ?? "—"}）</div>
+        </>
+      ) : (
+        <>
+          <div>综合分（无历史技术数据时的降级版）：</div>
+          <div style={{ marginTop: 4 }}>
+            · 当日涨跌 35%（{fearGauge.drawdown}）· 日内振幅 35%（{fearGauge.rsi}）· 换手率 30%（{fearGauge.macd}）
+          </div>
+        </>
+      )}
+      <div style={{ marginTop: 6, color: "#d1d5db" }}>
+        分档：<span style={{ color: "#6ee7b7" }}>&lt;20 极度贪婪</span> · <span style={{ color: "#34d399" }}>20-40 贪婪</span> · <span style={{ color: "#fbbf24" }}>40-60 中性</span> · <span style={{ color: "#fb923c" }}>60-80 恐慌</span> · <span style={{ color: "#f87171" }}>80-100 极度恐慌</span>
+      </div>
+      <div style={{ marginTop: 4, color: "#d1d5db" }}>技术分量每周一 08:10 自动刷新（腾讯 K 线源）</div>
     </div>
+  );
+  return (
+    <Tooltip title={tipContent} placement="topLeft">
+      <div
+        style={{
+          marginTop: 10,
+          borderRadius: 6,
+          padding: "8px 10px",
+          background: fc.bg,
+          border: `1px solid ${fc.bar}`,
+          cursor: "help",
+        }}
+      >
+        <Flex align="center" justify="space-between" style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: fc.text }}>
+            {fearGauge.label}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+            {hasTech
+              ? `RSI ${fearGauge.rsi14 ?? "—"} · 量比 ${fearGauge.volumeRatio ?? "—"} · 5日 ${fearGauge.change5dPct ?? "—"}%`
+              : `涨跌 ${fearGauge.drawdown} · 波动 ${fearGauge.rsi} · 换手 ${fearGauge.macd}`}
+          </span>
+        </Flex>
+        <Progress
+          percent={fearGauge.overall}
+          size="small"
+          showInfo={false}
+          strokeColor={fc.bar}
+          trailColor="var(--border-secondary)"
+        />
+      </div>
+    </Tooltip>
   );
 }
