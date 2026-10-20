@@ -15,6 +15,9 @@
 // 局限：进程内内存缓存，重启即失效；多实例部署需要换 Redis。
 // ============================================================
 
+import * as fs from "fs";
+import * as path from "path";
+
 interface Entry<T> {
   data: T;
   ts: number;      // 写入时间
@@ -24,7 +27,13 @@ interface Entry<T> {
 export interface CacheOptions {
   /** 新鲜期（毫秒）：这段时间内直接返回不刷新 */
   ttl: number;
-  /** 陈旧期（毫秒）：超过 ttl 但未超过这个值，返回旧数据 + 后台刷新 */
+  /**
+   * 最大可接受年龄（毫秒，默认 24 小时）。
+   * 只要没超过这个年龄，就永远先返回旧数据 + 后台刷新，绝不让用户等。
+   * 超过则同步加载（等价于冷启动，只会在进程刚起或缓存实在太久时发生）。
+   */
+  maxAge?: number;
+  /** @deprecated 旧参数，等价于 maxAge，保留兼容 */
   staleTtl?: number;
 }
 
@@ -41,25 +50,31 @@ export function isTradingHours(now = new Date()): boolean {
 
 /**
  * 带缓存地取数据。
+ *
+ * 核心原则：**只要有缓存就立刻返回，刷新永远在后台做**。
+ * 用户只在「进程刚启动 / 缓存年龄超过 maxAge」这两种情况下才会等待。
+ *
  * @param key      缓存键（调用方自己拼，建议含参数）
  * @param loader   真正打上游的函数
- * @param options  ttl / staleTtl
+ * @param options  ttl / maxAge
  */
 export async function cached<T>(
   key: string,
   loader: () => Promise<T>,
   options: CacheOptions
 ): Promise<T> {
-  const { ttl, staleTtl = ttl * 3 } = options;
+  const { ttl } = options;
+  const maxAge = options.maxAge ?? options.staleTtl ?? 24 * 60 * 60 * 1000;
   const now = Date.now();
   const hit = store.get(key) as Entry<T> | undefined;
 
   if (hit) {
     const age = now - hit.ts;
-    // ① 新鲜期：直接给
+    // ① 新鲜期：直接给，不刷新
     if (age < ttl) return hit.data;
-    // ② 陈旧期：先给旧的，后台刷新（不阻塞用户）
-    if (age < staleTtl) {
+    // ② 过期但没过 maxAge：立刻给旧的，后台刷新（不阻塞用户）
+    //    注意：这里不再有「同步重算」的分支——旧数据总比让用户干等强
+    if (age < maxAge) {
       if (!hit.loading) {
         hit.loading = true;
         loader()
@@ -73,7 +88,7 @@ export async function cached<T>(
     }
   }
 
-  // ③ 无缓存或太旧：合并并发请求，同一个 key 只打一次上游
+  // ③ 无缓存或超过 maxAge：合并并发请求，同一个 key 只打一次上游
   const existing = inflight.get(key) as Promise<T> | undefined;
   if (existing) return existing;
 
@@ -113,4 +128,67 @@ export function clearCache(keyPrefix?: string): number {
     }
   }
   return n;
+}
+
+// ── 磁盘持久化 ─────────────────────────────────────────────
+// 为什么需要：内存缓存在服务重启后就空了，用户重启后第一次打开又要等
+// 上游（实测 /api/stocks 冷启 1.6s）。把结果落到 cache/api/ 下，
+// 重启后直接读盘秒回，再后台刷新 —— 体验上永远不等。
+//
+// cache/ 已在 .gitignore 里，不会进版本库。
+
+const PERSIST_DIR = path.join(process.cwd(), "cache", "api");
+
+/** 把 key 变成安全的文件名（避免 / : , 等字符）*/
+function keyToFile(key: string): string {
+  const safe = key.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+  return path.join(PERSIST_DIR, `${safe}.json`);
+}
+
+/** 从磁盘读缓存（读不到返回 null）*/
+export function readPersisted<T>(key: string): { data: T; ts: number } | null {
+  try {
+    const raw = fs.readFileSync(keyToFile(key), "utf-8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.ts !== "number") return null;
+    return { data: parsed.data as T, ts: parsed.ts };
+  } catch {
+    return null;
+  }
+}
+
+/** 写缓存到磁盘（失败静默，不影响主流程）*/
+export function writePersisted<T>(key: string, data: T, ts: number): void {
+  try {
+    fs.mkdirSync(PERSIST_DIR, { recursive: true });
+    fs.writeFileSync(keyToFile(key), JSON.stringify({ ts, data }), "utf-8");
+  } catch {
+    // 磁盘写失败就只保留内存缓存，不打断请求
+  }
+}
+
+/**
+ * 和 cached() 一样，但结果落盘：服务重启后第一次请求也不用等上游。
+ * 用于「上游慢且重启会抖」的接口（行情）。
+ */
+export async function cachedPersistent<T>(
+  key: string,
+  loader: () => Promise<T>,
+  options: CacheOptions
+): Promise<T> {
+  // 内存里没有就先尝试从磁盘恢复（相当于「重启前的热缓存」）
+  if (!store.has(key)) {
+    const persisted = readPersisted<T>(key);
+    if (persisted) {
+      store.set(key, { data: persisted.data, ts: persisted.ts, loading: false });
+    }
+  }
+
+  // 包装 loader：每次真正打上游拿到新数据时同步落盘。
+  // 后台刷新走的也是这个 loader，所以刷新后磁盘也是新的。
+  return cached(key, async () => {
+    const data = await loader();
+    writePersisted(key, data, Date.now());
+    return data;
+  }, options);
 }

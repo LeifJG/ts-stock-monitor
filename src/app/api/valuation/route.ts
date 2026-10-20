@@ -77,12 +77,25 @@ function triggerBackfill(codes: string[]) {
   child.unref();
 }
 
+// ── 估值缓存内存复用（按 mtime 失效）────────────────────────
+// valuation_cache.json 有 1.6MB，每次请求都 readFile + JSON.parse 要 10-16ms，
+// 高峰期还会因为 GC 抖动。按文件 mtime 判断是否变化，没变就直接复用解析结果。
+let _memo: { mtimeMs: number; data: Record<string, ValuationData> } | null = null;
+
+async function loadValuationCache(): Promise<Record<string, ValuationData>> {
+  const st = await fs.stat(CACHE_PATH);
+  if (_memo && _memo.mtimeMs === st.mtimeMs) return _memo.data;
+  const raw = await fs.readFile(CACHE_PATH, "utf-8");
+  const data = JSON.parse(raw) as Record<string, ValuationData>;
+  _memo = { mtimeMs: st.mtimeMs, data };
+  return data;
+}
+
 export async function GET(request: NextRequest) {
   try {
     let cache: Record<string, ValuationData> = {};
     try {
-      const raw = await fs.readFile(CACHE_PATH, "utf-8");
-      cache = JSON.parse(raw);
+      cache = await loadValuationCache();
     } catch {
       return NextResponse.json(
         { success: false, error: "估值缓存不存在，请先运行 scripts/valuation_data.py" },

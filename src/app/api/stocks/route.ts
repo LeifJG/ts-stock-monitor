@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFullStockData } from "@/lib/stock-api";
-import { cached, isTradingHours } from "@/lib/api-cache";
+import { cachedPersistent, isTradingHours } from "@/lib/api-cache";
 import type { ApiResponse, StockData, StockCode } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -54,9 +54,10 @@ export async function GET(request: NextRequest) {
     const cacheKey = `stocks:${[...codes].sort().join(",")}`;
     const ttl = isTradingHours() ? TTL_TRADING : TTL_CLOSED;
 
-    const data = await cached(cacheKey, () => fetchFullStockData(codes), {
+    // 用 cachedPersistent：结果落盘到 cache/api/，服务重启后第一次请求
+    // 也能直接读盘返回（否则要等上游 1.6s）
+    const data = await cachedPersistent(cacheKey, () => fetchFullStockData(codes), {
       ttl,
-      staleTtl: ttl * 6, // 最多容忍 2 分钟（交易时段）/ 30 分钟（收盘后）的旧数据
     });
 
     return NextResponse.json<ApiResponse<StockData[]>>(
