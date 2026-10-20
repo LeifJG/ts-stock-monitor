@@ -70,12 +70,16 @@ def _pct_result(code: str, dates, pe_vals, pb_vals, cur_price=None) -> dict | No
         "updated_at": str((pe.index[-1] if not pe.empty else pb.index[-1]).date()),
     }
 
-    for years in (1, 3, 5):
+    for years in (1, 3, 5, 10):
         label = f"{years}y"
         pe_w = recent_window(pe, years)
         pb_w = recent_window(pb, years)
         result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
         result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
+
+    # 全历史分位（数据源窗口：百度股市通最长近十年/上市以来）
+    result["pe_pct_all"] = percentile_rank(pe.to_numpy(), cur_pe)
+    result["pb_pct_all"] = percentile_rank(pb.to_numpy(), cur_pb)
 
     pe5 = pe[-250 * 5:]
     pb5 = pb[-250 * 5:]
@@ -103,7 +107,8 @@ def fetch_one_hk(code: str) -> dict | None:
         last_err: Exception | None = None
         for attempt in range(3):  # 百度接口偶发 DNS 抖动，重试兜底
             try:
-                return ak.stock_hk_valuation_baidu(symbol=code, indicator=indicator, period="近五年")
+                # 近十年为百度接口上限；上市不足十年的票自动回落为上市以来
+                return ak.stock_hk_valuation_baidu(symbol=code, indicator=indicator, period="近十年")
             except Exception as e:
                 last_err = e
                 time.sleep(2 * (attempt + 1))
@@ -188,13 +193,17 @@ def fetch_one(code: str) -> dict | None:
             "updated_at": str(pe.index[-1].date()),
         }
 
-        # 各窗口分位（1年/3年/5年/全部）
-        for years in (1, 3, 5):
+        # 各窗口分位（1年/3年/5年/10年/全部）
+        # 数据源（东财历史估值）仅覆盖 2018 年起 ≈ 8.7 年，「全部」即该窗口
+        for years in (1, 3, 5, 10):
             label = f"{years}y"
             pe_w = recent_window(pe, years)
             pb_w = recent_window(pb, years)
             result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
             result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
+        # 全历史分位（A股=2018起全部；港股=近十年/上市以来），作为 5 年窗口的补充视角
+        result["pe_pct_all"] = percentile_rank(pe.to_numpy(), cur_pe)
+        result["pb_pct_all"] = percentile_rank(pb.to_numpy(), cur_pb)
 
         # 5年极值
         pe5 = pe[-250*5:]

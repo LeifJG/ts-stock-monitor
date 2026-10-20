@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Flex, Tag, Spin } from "antd";
+import { Flex, Tag, Spin, Tooltip } from "antd";
 import {
   AimOutlined, SafetyOutlined, FallOutlined, RiseOutlined,
   PlusCircleOutlined, MinusCircleOutlined, CheckCircleOutlined,
@@ -164,13 +164,23 @@ export default function TradeAdviceCard({ advice, loading }: { advice: TradeAdvi
         {advice.pe != null && advice.pe > 0 && (
           <Tag style={{ margin: 0, fontSize: 10 }}>PE {advice.pe.toFixed(1)}</Tag>
         )}
-        {advice.pePercentile5y != null && (
-          <Tag
-            style={{ margin: 0, fontSize: 10 }}
-            color={advice.pePercentile5y < 20 ? "green" : advice.pePercentile5y > 80 ? "red" : "default"}
-          >
-            PE分位 {advice.pePercentile5y.toFixed(0)}%
-          </Tag>
+        {(advice.pePercentile10y != null || advice.pePercentile5y != null) && (
+          <Tooltip title={
+            advice.pePercentile5y != null && advice.pePercentile10y != null && Math.abs(advice.pePercentile10y - advice.pePercentile5y) >= 5
+              ? `5年分位 ${advice.pePercentile5y.toFixed(0)}%`
+              : undefined
+          }>
+            <Tag
+              style={{ margin: 0, fontSize: 10, cursor: "help" }}
+              color={
+                advice.pePercentile10y != null && advice.pePercentile10y < 20 ? "green"
+                : advice.pePercentile10y != null && advice.pePercentile10y > 80 ? "red"
+                : "default"
+              }
+            >
+              PE分位(10年) {advice.pePercentile10y?.toFixed(0) ?? advice.pePercentile5y?.toFixed(0)}%
+            </Tag>
+          </Tooltip>
         )}
         {advice.dividendYield != null && (
           <Tag style={{ margin: 0, fontSize: 10 }} color={advice.dividendYield >= 5 ? "green" : "default"}>

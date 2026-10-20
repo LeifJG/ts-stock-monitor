@@ -24,9 +24,13 @@ export interface ValuationData {
   pe_pct_1y?: number;
   pe_pct_3y?: number;
   pe_pct_5y?: number;
+  pe_pct_10y?: number;
+  pe_pct_all?: number;
   pb_pct_1y?: number;
   pb_pct_3y?: number;
   pb_pct_5y?: number;
+  pb_pct_10y?: number;
+  pb_pct_all?: number;
   pe_min_5y: number;
   pe_max_5y: number;
   pb_min_5y: number;

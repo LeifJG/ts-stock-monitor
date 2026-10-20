@@ -30,7 +30,7 @@ describe("computeTradeAdvice — 估值分位", () => {
   it("PE/PB 分位齐备时按 6:4 融合（PE 20 + PB 40 → 融合 28 → 偏低）", () => {
     const a = computeTradeAdvice(mkStock(), mkVal({ pe_pct_5y: 20, pb_pct_5y: 40 }));
     expect(a).not.toBeNull();
-    expect(a!.reasons.join()).toContain("PE/PB 分位融合 28%");
+    expect(a!.reasons.join()).toContain("PE/PB 分位融合(10年) 28%");
   });
 
   it("亏损股（PE<0）PE 分位无效 → 回落 PB 分位评估", () => {
@@ -39,7 +39,7 @@ describe("computeTradeAdvice — 估值分位", () => {
       mkVal({ pe_pct_5y: 55, pb_pct_5y: 8 })
     );
     expect(a).not.toBeNull();
-    expect(a!.reasons.join()).toContain("PB 5年分位 8%");
+    expect(a!.reasons.join()).toContain("PB 10年分位 8%");
     expect(a!.reasons.join()).toContain("亏损股 PE 无效");
   });
 

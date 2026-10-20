@@ -32,8 +32,12 @@ export interface TradeAdvice {
   // ── 数据摘要 ──
   pe: number | null;
   pePercentile5y: number | null;
+  pePercentile10y: number | null;
+  pePercentileAll: number | null;
   pb: number | null;
   pbPercentile5y: number | null;
+  pbPercentile10y: number | null;
+  pbPercentileAll: number | null;
   dividendYield: number | null;
   roe: number | null;
   compositeScore: number | null;
@@ -92,8 +96,12 @@ export function computeTradeAdvice(
   const fear = fearGauge?.overall ?? null;
   const pePct5y = valuation?.pe_pct_5y ?? null;
   const pbPct5y = valuation?.pb_pct_5y ?? null;
+  // 决策主口径 = 10 年档（A股东财源实际覆盖 2018 起 ≈8.7 年；港股百度近十年），
+  // 5 年档降级为展示补充；全历史仅作最后兜底
+  const pePct10y = valuation?.pe_pct_10y ?? valuation?.pe_pct_all ?? pePct5y;
+  const pbPct10y = valuation?.pb_pct_10y ?? valuation?.pb_pct_all ?? pbPct5y;
   // 亏损股 PE 无效（负值），此时 PE 分位不可用 → 回落到 PB 分位
-  const effPePct = pe != null && pe > 0 ? pePct5y : null;
+  const effPePct = pe != null && pe > 0 ? pePct10y : null;
 
   // 综合评分（用现有指标近似计算，避免循环依赖）
   const compositeScore = estimateCompositeScore(stock);
@@ -147,7 +155,7 @@ export function computeTradeAdvice(
   // ── 风控位（基于买入价；仅作破位参考，低估区分批加仓优于止损）──
   // 估值分位极低（<10%）放宽到 -12%，极高位（>80%）收紧到 -6%
   let stopLossPct = 0.08;
-  const effPctForStop = effPePct ?? pbPct5y;
+  const effPctForStop = effPePct ?? pbPct10y;
   if (effPctForStop != null) {
     if (effPctForStop < 10) stopLossPct = 0.12;
     else if (effPctForStop > 80) stopLossPct = 0.06;
@@ -158,27 +166,27 @@ export function computeTradeAdvice(
   const reasons: string[] = [];
   const risks: string[] = [];
 
-  // 1. 估值分位（核心权重）：PE 为主、PB 兜底，两者齐备时 6:4 融合
+  // 1. 估值分位（核心权重）：PE 为主、PB 兜底，两者齐备时 6:4 融合（10 年档）
   let valuationScore = 50; // 未知 = 中性
   const pctForDecision =
-    effPePct != null && pbPct5y != null
-      ? effPePct * 0.6 + pbPct5y * 0.4
-      : (effPePct ?? pbPct5y);
+    effPePct != null && pbPct10y != null
+      ? effPePct * 0.6 + pbPct10y * 0.4
+      : (effPePct ?? pbPct10y);
   if (pctForDecision != null) {
     const label =
-      effPePct != null && pbPct5y != null
-        ? `PE/PB 分位融合`
+      effPePct != null && pbPct10y != null
+        ? `PE/PB 分位融合(10年)`
         : effPePct != null
-          ? "PE 5年分位"
-          : "PB 5年分位";
+          ? "PE 10年分位"
+          : "PB 10年分位";
     if (pctForDecision < 15) { valuationScore = 90; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 处于历史低位区间`); }
     else if (pctForDecision < 35) { valuationScore = 75; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 偏低`); }
     else if (pctForDecision < 65) { valuationScore = 50; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 估值中枢`); }
     else if (pctForDecision < 85) { valuationScore = 30; risks.push(`${label} ${pctForDecision.toFixed(0)}% — 偏高`); }
     else { valuationScore = 15; risks.push(`${label} ${pctForDecision.toFixed(0)}% — 历史高位，追高风险大`); }
   }
-  if (pe != null && pe < 0 && pbPct5y != null) {
-    reasons.push(`亏损股 PE 无效，已按 PB 分位 ${pbPct5y.toFixed(0)}% 评估`);
+  if (pe != null && pe < 0 && pbPct10y != null) {
+    reasons.push(`亏损股 PE 无效，已按 PB 10年分位 ${pbPct10y.toFixed(0)}% 评估`);
   }
 
   // 2. 安全边际
@@ -244,7 +252,7 @@ export function computeTradeAdvice(
 
   // ── 一句话结论 ──
   const ccy = isAShare(code) ? "¥" : "HK$";
-  const summary = buildSummary(action, price, fairValue, pePct5y, dividendYield, ccy);
+  const summary = buildSummary(action, price, fairValue, pctForDecision, dividendYield, ccy);
 
   return {
     code,
@@ -263,8 +271,12 @@ export function computeTradeAdvice(
     risks: risks.slice(0, 4),
     pe,
     pePercentile5y: pePct5y,
+    pePercentile10y: pePct10y,
+    pePercentileAll: valuation?.pe_pct_all ?? null,
     pb,
     pbPercentile5y: pbPct5y,
+    pbPercentile10y: pbPct10y,
+    pbPercentileAll: valuation?.pb_pct_all ?? null,
     dividendYield,
     roe,
     compositeScore,
@@ -367,8 +379,8 @@ export function computePositionLevels(
   let tpPct = 0.2;   // 默认止盈 +20%
   let slPct = 0.08;  // 默认止损 -8%
 
-  // 与主函数 computeTradeAdvice 同一口径：分位 <10% 放宽、>80% 收紧
-  const effPct = valuation?.pe_pct_5y ?? valuation?.pb_pct_5y ?? null;
+  // 与主函数 computeTradeAdvice 同一口径（10 年档）：分位 <10% 放宽、>80% 收紧
+  const effPct = valuation?.pe_pct_10y ?? valuation?.pe_pct_5y ?? valuation?.pb_pct_10y ?? valuation?.pb_pct_5y ?? null;
   if (effPct != null) {
     if (effPct < 10) { tpPct = 0.3; slPct = 0.12; }
     else if (effPct > 80) { tpPct = 0.15; slPct = 0.06; }
