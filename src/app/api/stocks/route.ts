@@ -1,13 +1,25 @@
 // ============================================================
-// src/app/api/stocks/route.ts — A 股数据 API 路由
+// src/app/api/stocks/route.ts — A 股数据 API 路由（带缓存）
 // ============================================================
 // 前端通过此接口获取行情数据+大盘指数，不直接调用外部 API。
+//
+// 缓存策略（2026-10 加）：上游腾讯行情 qt.gtimg.cn:443 的 TCP 建连
+// 会间歇性卡 7 秒，导致每次刷新都转圈 5 秒+。这里加一层：
+//   · 交易时段 TTL 20 秒（价格变化快，但不能每次等上游）
+//   · 非交易时段 TTL 300 秒（收盘后价格不动，没必要反复拉）
+//   · 陈旧期返回旧值 + 后台刷新，用户永远不用等
+// 缓存按「排序后的 codes」做 key，前端换顺序也能命中。
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFullStockData } from "@/lib/stock-api";
+import { cached, isTradingHours } from "@/lib/api-cache";
 import type { ApiResponse, StockData, StockCode } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+// 交易时段 20 秒，非交易时段 5 分钟
+const TTL_TRADING = 20_000;
+const TTL_CLOSED = 300_000;
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,11 +50,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await fetchFullStockData(codes);
+    // key 用排序后的 codes：前端换个顺序也能命中同一份缓存
+    const cacheKey = `stocks:${[...codes].sort().join(",")}`;
+    const ttl = isTradingHours() ? TTL_TRADING : TTL_CLOSED;
+
+    const data = await cached(cacheKey, () => fetchFullStockData(codes), {
+      ttl,
+      staleTtl: ttl * 6, // 最多容忍 2 分钟（交易时段）/ 30 分钟（收盘后）的旧数据
+    });
 
     return NextResponse.json<ApiResponse<StockData[]>>(
       { success: true, data },
-      { status: 200 }
+      {
+        status: 200,
+        // 让浏览器也缓存一小会儿，减少重复请求
+        headers: {
+          "Cache-Control": `public, max-age=0, s-maxage=${Math.floor(ttl / 1000)}`,
+        },
+      }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "未知错误";

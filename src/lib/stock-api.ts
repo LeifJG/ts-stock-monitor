@@ -155,6 +155,8 @@ function readFinancialsCache(): Record<string, FinancialsEntry> | null {
 
 let _proxyAgent: any = null;
 let _proxyUrl: string | null | undefined;
+/** 直连熔断截止时间戳：直连失败后这段时间内直接走代理 */
+let _directDownUntil = 0;
 
 /**
  * 动态解析 Clash 代理（P1-6：不再硬编码失效网关 IP）
@@ -200,40 +202,67 @@ function getProxyAgent() {
 import fetch from "node-fetch";
 
 /**
- * 智能请求：直连优先，失败/超时自动回退到 Clash 代理
- * 直连超时 5s，代理超时 15s
+ * 智能请求：直连快速探测 → Clash 代理 → 直连长超时兜底
+ *
+ * 为什么要三层（实测数据）：
+ *   · 腾讯 443 直连偶尔 0.03s，偶尔 time_connect 就卡 7.26s
+ *   · 代理稳定 0.03s
+ *   · 但 Clash 可能没开（用户会关掉），那时只能靠直连
+ * 所以：直连只探测 1.5s（卡住就立刻换代理，不让用户等），
+ *      代理也不可用时再用 12s 长超时直连兜底，保证 Clash 关闭时仍能用。
+ *
+ * 直连熔断：直连探测失败后 120 秒内直接走代理，不再每次白撞 1.5 秒。
  */
 async function proxyFetch(url: string, init?: any, retries = 2): Promise<any> {
-  const DIRECT_TIMEOUT = 5000;
+  const DIRECT_PROBE_TIMEOUT = 1500;
   const PROXY_TIMEOUT = 15000;
+  const DIRECT_FALLBACK_TIMEOUT = 12000;
+  const DIRECT_COOLDOWN = 120_000;
 
-  // 第一步：尝试直连（5s 超时）
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT);
-    const res = await (fetch as any)(url, { ...init, signal: controller.signal });
-    clearTimeout(timer);
-    return res;
-  } catch (directErr: any) {
-    // 直连失败，继续尝试代理
-  }
+  const skipDirect = Date.now() < _directDownUntil;
 
-  // 第二步：通过 Clash 代理重试
-  const agent = getProxyAgent();
-  if (!agent) {
-    throw new Error(`直连失败且无可用的 Clash 代理: ${url}`);
-  }
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  // 第一层：直连快速探测（跳过熔断窗口）
+  if (!skipDirect) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT);
-      const res = await (fetch as any)(url, { ...init, agent, signal: controller.signal });
+      const timer = setTimeout(() => controller.abort(), DIRECT_PROBE_TIMEOUT);
+      const res = await (fetch as any)(url, { ...init, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch {
+      // 直连探测失败：进入熔断窗口，后续请求优先走代理
+      _directDownUntil = Date.now() + DIRECT_COOLDOWN;
+    }
+  }
+
+  // 第二层：通过 Clash 代理重试
+  const agent = getProxyAgent();
+  if (agent) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT);
+        const res = await (fetch as any)(url, { ...init, agent, signal: controller.signal });
+        clearTimeout(timer);
+        return res;
+      } catch (err: any) {
+        if (attempt === retries) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  // 第三层：兜底直连（长超时）——Clash 关闭时唯一出路
+  {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DIRECT_FALLBACK_TIMEOUT);
+    try {
+      const res = await (fetch as any)(url, { ...init, signal: controller.signal });
       clearTimeout(timer);
       return res;
     } catch (err: any) {
-      if (attempt === retries) throw err;
-      await new Promise((r) => setTimeout(r, 1000));
+      clearTimeout(timer);
+      throw new Error(`直连与代理均失败: ${url} (${err?.message ?? err})`);
     }
   }
 }
