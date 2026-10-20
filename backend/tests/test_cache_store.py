@@ -5,7 +5,6 @@
 # 覆盖：读写往返、TTL 过期语义、json→PG 导入对账、文件变更自愈
 
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +12,22 @@ import pytest
 from app.services import cache_store
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
+# 测试用命名空间统一带 _test 前缀，结束后清理，避免污染生产库
+TEST_NS = ["_test_ns", "_test_bulk", "_test_ttl"]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_test_namespaces():
+    """测试跑完就删掉 _test_* 数据（不进生产库残留）"""
+    yield
+    from sqlalchemy import delete
+
+    from app.db import session_scope
+    from app.models import Cache
+
+    with session_scope() as s:
+        s.execute(delete(Cache).where(Cache.namespace.in_(TEST_NS)))
 
 
 # ── 基础读写往返 ────────────────────────────────────────────
