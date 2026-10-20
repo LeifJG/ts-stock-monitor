@@ -50,17 +50,17 @@ def test_num_or_falls_back():
 
 # ── 港股判定：必须恰好 5 位 ─────────────────────────────────
 def test_is_hk_stock():
-    assert pc.is_hk_stock("01810") is True
+    assert pc.is_hk_stock("01111") is True
     assert pc.is_hk_stock("00700") is True
     assert pc.is_hk_stock("700") is False        # 3 位短码不算港股（与 TS 一致）
-    assert pc.is_hk_stock("600036") is False
+    assert pc.is_hk_stock("888001") is False
     assert pc.is_hk_stock("0181") is False
 
 
 def test_exchange_rate():
     assert pc.set_hkd_rate(0.8563) is True
-    assert pc.get_exchange_rate("01810") == 0.8563
-    assert pc.get_exchange_rate("600036") == 1
+    assert pc.get_exchange_rate("01111") == 0.8563
+    assert pc.get_exchange_rate("888001") == 1
     # 超出合理区间的脏数据要拒收
     assert pc.set_hkd_rate(1.5) is False
     assert pc.set_hkd_rate(0.5) is False
@@ -71,96 +71,96 @@ def test_exchange_rate():
 # ── 归一化 ─────────────────────────────────────────────────
 def test_normalize_localStorage_format():
     p = pc.normalize_position({
-        "id": "p1", "stockCode": "600036", "stockName": "招商银行",
-        "shares": 700, "buyPrice": 22.29, "totalCost": 15603,
+        "id": "p1", "stockCode": "888001", "stockName": "虚构A股一",
+        "shares": 300, "buyPrice": 11.11, "totalCost": 3333,
     })
-    assert p["stockCode"] == "600036"
-    assert p["totalCost"] == 15603
-    assert p["baseShares"] == 700          # 老数据 baseShares 缺省 = shares
+    assert p["stockCode"] == "888001"
+    assert p["totalCost"] == 3333
+    assert p["baseShares"] == 300          # 老数据 baseShares 缺省 = shares
     assert "lastAddPrice" not in p
 
 
 def test_normalize_sync_json_format():
     # 银河同步格式：code / cost（每股成本），没有 totalCost
-    p = pc.normalize_position({"code": "09988", "shares": 1500, "cost": 137.182})
-    assert p["stockCode"] == "09988"
-    assert p["totalCost"] == pytest.approx(137.182 * 1500)
+    p = pc.normalize_position({"code": "02222", "shares": 400, "cost": 33.33})
+    assert p["stockCode"] == "02222"
+    assert p["totalCost"] == pytest.approx(33.33 * 400)
 
 
 def test_normalize_totalcost_fallback_chain():
     # totalCost 缺失且 cost 缺失 → buyPrice × shares
-    p = pc.normalize_position({"stockCode": "002920", "shares": 150, "buyPrice": 88.88})
-    assert p["totalCost"] == pytest.approx(88.88 * 150)
+    p = pc.normalize_position({"stockCode": "888006", "shares": 150, "buyPrice": 55.55})
+    assert p["totalCost"] == pytest.approx(55.55 * 150)
 
 
 def test_normalize_drops_bad_records():
     assert pc.normalize_position({"stockCode": "", "shares": 100}) is None
-    assert pc.normalize_position({"stockCode": "000333", "shares": 0}) is None
+    assert pc.normalize_position({"stockCode": "888004", "shares": 0}) is None
     assert pc.normalize_positions("not a list") == []
     assert len(pc.normalize_positions([
-        {"stockCode": "000333", "shares": 0},
-        {"stockCode": "600887", "shares": 300, "buyPrice": 28.6},
+        {"stockCode": "888004", "shares": 0},
+        {"stockCode": "888005", "shares": 300, "buyPrice": 28.6},
     ])) == 1
 
 
 def test_normalize_baseshares_clamped():
     # baseShares > shares 属倒挂，钳到 shares
-    p = pc.normalize_position({"stockCode": "600941", "shares": 200, "buyPrice": 85.29, "baseShares": 500})
-    assert p["baseShares"] == 200
+    p = pc.normalize_position({"stockCode": "888003", "shares": 100, "buyPrice": 55.5, "baseShares": 300})
+    assert p["baseShares"] == 100
     # 正常补仓场景保留
-    p2 = pc.normalize_position({"stockCode": "01810", "shares": 5600, "buyPrice": 36.2,
-                                "baseShares": 5000, "lastAddPrice": 34.1})
-    assert p2["baseShares"] == 5000
-    assert p2["lastAddPrice"] == 34.1
+    p2 = pc.normalize_position({"stockCode": "01111", "shares": 800, "buyPrice": 12.5,
+                                "baseShares": 600, "lastAddPrice": 11.0})
+    assert p2["baseShares"] == 600
+    assert p2["lastAddPrice"] == 11.0
 
 
 # ── 指标计算 ───────────────────────────────────────────────
 def test_position_metrics_standard():
     p = pc.normalize_position({
-        "stockCode": "600036", "shares": 700, "buyPrice": 22.29, "totalCost": 15603,
-        "dividends": [{"total": 1190}, {"total": 1330}],
+        "stockCode": "888001", "shares": 300, "buyPrice": 11.11, "totalCost": 3333,
+        "dividends": [{"total": 120}, {"total": 150}],
     })
     m = pc.calc_position_metrics(p, {
-        "quote": {"currentPrice": 28.5}, "fundamentals": {"dividendYield": 6.2},
+        "quote": {"currentPrice": 13.5}, "fundamentals": {"dividendYield": 5.0},
     })
-    assert m["marketValue"] == 19950
-    assert m["totalDividends"] == 2520
-    assert m["totalProfit"] == 6867          # 市值 + 分红 - 投入
-    assert m["realCost"] == 13083            # 投入 - 分红
-    assert m["realCostPerShare"] == 18.69
+    assert m["marketValue"] == 300 * 13.5
+    assert m["totalDividends"] == 270
+    assert m["totalProfit"] == 300 * 13.5 + 270 - 3333          # 市值 + 分红 - 投入
+    assert m["realCost"] == 3333 - 270            # 投入 - 分红
+    assert m["realCostPerShare"] == 10.21
 
 
 def test_position_metrics_no_quote_falls_back_to_buy_price():
-    p = pc.normalize_position({"stockCode": "600900", "shares": 500, "buyPrice": 18.459, "totalCost": 9229.5})
+    p = pc.normalize_position({"stockCode": "888002", "shares": 100, "buyPrice": 25.5, "totalCost": 2550})
     m = pc.calc_position_metrics(p, None)
-    assert m["marketValue"] == 9229.5
+    assert m["marketValue"] == 2550
     assert m["totalProfit"] == 0
 
 
 def test_position_metrics_hk_rate_applied():
     pc.set_hkd_rate(0.8563)
-    p = pc.normalize_position({"stockCode": "01810", "shares": 5600, "buyPrice": 36.229,
-                               "totalCost": 202882.4})
-    m = pc.calc_position_metrics(p, {"quote": {"currentPrice": 42.15}})
-    assert m["marketValue"] == pytest.approx(5600 * 42.15 * 0.8563, abs=0.01)
+    p = pc.normalize_position({"stockCode": "01111", "shares": 800, "buyPrice": 12.5,
+                               "totalCost": 10000})
+    m = pc.calc_position_metrics(p, {"quote": {"currentPrice": 15.2}})
+    assert m["marketValue"] == pytest.approx(800 * 15.2 * 0.8563, abs=0.01)
     pc.set_hkd_rate(0.86)
 
 
 # ── 组合汇总 ───────────────────────────────────────────────
 def test_portfolio_summary_counts():
     positions = pc.normalize_positions([
-        {"stockCode": "600036", "shares": 700, "buyPrice": 22.29, "totalCost": 15603},
-        {"stockCode": "600900", "shares": 500, "buyPrice": 18.459},
+        {"stockCode": "888001", "shares": 300, "buyPrice": 11.11, "totalCost": 3333},
+        {"stockCode": "888002", "shares": 100, "buyPrice": 25.5},
     ])
     s = pc.calc_portfolio_summary(positions, {
-        "600036": {"quote": {"currentPrice": 28.5}, "fundamentals": {"dividendYield": 6.2}},
-        "600900": {"quote": {"currentPrice": 19.8}, "fundamentals": {"dividendYield": 4.0}},
+        "888001": {"quote": {"currentPrice": 13.5}, "fundamentals": {"dividendYield": 5.0}},
+        "888002": {"quote": {"currentPrice": 26.8}, "fundamentals": {"dividendYield": 4.0}},
     })
     assert s["positionCount"] == 2
-    assert s["totalInvested"] == pytest.approx(15603 + 18.459 * 500, abs=0.01)
-    assert s["totalMarketValue"] == pytest.approx(19950 + 19.8 * 500, abs=0.01)
+    assert s["totalInvested"] == pytest.approx(3333 + 25.5 * 100, abs=0.01)
+    assert s["totalMarketValue"] == pytest.approx(300 * 13.5 + 26.8 * 100, abs=0.01)
     # 年化分红 = Σ 市值 × 股息率
-    expected_annual = 19950 * 0.062 + 9900 * 0.04
+    expected_annual = (300 * 13.5) * 0.05 + (26.8 * 100) * 0.04
     assert s["annualDividendIncome"] == pytest.approx(expected_annual, abs=0.02)
 
 

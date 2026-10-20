@@ -1,5 +1,6 @@
 {
-  "_comment": "持仓计算一致性测试夹具：TS 与 Python 两份实现吃同一份输入，输出必须逐字段一致",
+  "_comment": "持仓计算一致性夹具：TS 与 Python 两份实现吃同一份输入，输出必须逐字段一致",
+  "_warning": "本文件会提交到公开仓库——股票代码与数值必须虚构，禁止填真实持仓。提交前跑 backend/dev.sh guard 自查",
   "fxRate": 0.8563,
   "cases": [
     {
@@ -7,124 +8,124 @@
       "positions": [
         {
           "id": "p1",
-          "stockCode": "600036",
-          "stockName": "招商银行",
-          "shares": 700,
-          "buyPrice": 22.29,
-          "totalCost": 15603,
+          "stockCode": "888001",
+          "stockName": "虚构A股一",
+          "shares": 300,
+          "buyPrice": 11.11,
+          "totalCost": 3333,
           "dividends": [
-            { "id": "d1", "date": "2025-07-15", "perShare": 1.7, "total": 1190 },
-            { "id": "d2", "date": "2026-07-15", "perShare": 1.9, "total": 1330 }
+            { "id": "d1", "date": "2025-07-15", "perShare": 0.4, "total": 120 },
+            { "id": "d2", "date": "2026-07-15", "perShare": 0.5, "total": 150 }
           ]
         }
       ],
       "stockData": {
-        "600036": { "quote": { "currentPrice": 28.5 }, "fundamentals": { "dividendYield": 6.2 } }
+        "888001": { "quote": { "currentPrice": 13.5 }, "fundamentals": { "dividendYield": 5.0 } }
       }
     },
     {
-      "name": "港股-有分红-汇率换算",
+      "name": "港股-有分红-汇率换算-含补仓字段",
       "positions": [
         {
-          "stockCode": "01810",
-          "shares": 5600,
-          "buyPrice": 36.229,
-          "totalCost": 202882.4,
-          "baseShares": 5000,
-          "lastAddPrice": 34.1,
+          "stockCode": "01111",
+          "shares": 800,
+          "buyPrice": 12.5,
+          "totalCost": 10000,
+          "baseShares": 600,
+          "lastAddPrice": 11.0,
           "dividends": [
-            { "id": "d3", "date": "2025-06-01", "perShare": 0.12, "total": 672 }
+            { "id": "d3", "date": "2025-06-01", "perShare": 0.1, "total": 80 }
           ]
         }
       ],
       "stockData": {
-        "01810": { "quote": { "currentPrice": 42.15 }, "fundamentals": { "dividendYield": 1.15 } }
+        "01111": { "quote": { "currentPrice": 15.2 }, "fundamentals": { "dividendYield": 1.5 } }
       }
     },
     {
       "name": "港股同步json格式-code/cost-无分红",
       "positions": [
-        { "code": "09988", "shares": 1500, "cost": 137.182 }
+        { "code": "02222", "shares": 400, "cost": 33.33 }
       ],
       "stockData": {
-        "09988": { "quote": { "currentPrice": 158.3 }, "fundamentals": { "dividendYield": 0 } }
+        "02222": { "quote": { "currentPrice": 40.0 }, "fundamentals": { "dividendYield": 0 } }
       }
     },
     {
       "name": "无实时行情-回落买入价",
       "positions": [
-        { "stockCode": "600900", "shares": 500, "buyPrice": 18.459, "totalCost": 9229.5 }
+        { "stockCode": "888002", "shares": 100, "buyPrice": 25.5, "totalCost": 2550 }
       ],
       "stockData": {}
     },
     {
       "name": "短码港股700-3位数字不算港股(边界)",
       "positions": [
-        { "stockCode": "700", "shares": 200, "buyPrice": 320.5 }
+        { "stockCode": "700", "shares": 50, "buyPrice": 200.0 }
       ],
       "stockData": {
-        "700": { "quote": { "currentPrice": 355.0 }, "fundamentals": { "dividendYield": 2.4 } }
+        "700": { "quote": { "currentPrice": 220.0 }, "fundamentals": { "dividendYield": 2.4 } }
       }
     },
     {
       "name": "baseShares倒挂-钳到shares",
       "positions": [
-        { "stockCode": "600941", "shares": 200, "buyPrice": 85.29, "baseShares": 500 }
+        { "stockCode": "888003", "shares": 100, "buyPrice": 55.5, "baseShares": 300 }
       ],
       "stockData": {
-        "600941": { "quote": { "currentPrice": 92.1 }, "fundamentals": { "dividendYield": 5.05 } }
+        "888003": { "quote": { "currentPrice": 60.0 }, "fundamentals": { "dividendYield": 5.05 } }
       }
     },
     {
-      "name": "坏数据-share为0应过滤",
+      "name": "坏数据-share为0或无代码应过滤",
       "positions": [
-        { "stockCode": "000333", "shares": 0, "buyPrice": 32.879 },
+        { "stockCode": "888004", "shares": 0, "buyPrice": 32.879 },
         { "stockCode": "", "shares": 100, "buyPrice": 10 },
-        { "stockCode": "600887", "shares": 300, "buyPrice": 28.6, "totalCost": 8580 }
+        { "stockCode": "888005", "shares": 300, "buyPrice": 28.6, "totalCost": 8580 }
       ],
       "stockData": {
-        "600887": { "quote": { "currentPrice": 27.2 }, "fundamentals": { "dividendYield": 4.3 } }
+        "888005": { "quote": { "currentPrice": 27.2 }, "fundamentals": { "dividendYield": 4.3 } }
       }
     },
     {
       "name": "总成本全缺-按buyPrice×shares",
       "positions": [
-        { "stockCode": "002920", "shares": 150, "buyPrice": 88.88 }
+        { "stockCode": "888006", "shares": 150, "buyPrice": 55.55 }
       ],
       "stockData": {
-        "002920": { "quote": { "currentPrice": 95.5 }, "fundamentals": { "dividendYield": 1.8 } }
+        "888006": { "quote": { "currentPrice": 61.0 }, "fundamentals": { "dividendYield": 1.8 } }
       }
     },
     {
       "name": "亏损场景-负盈亏百分比",
       "positions": [
         {
-          "stockCode": "09880",
-          "shares": 1350,
-          "buyPrice": 120.0,
-          "totalCost": 162000,
+          "stockCode": "03333",
+          "shares": 500,
+          "buyPrice": 44.4,
+          "totalCost": 22200,
           "dividends": []
         }
       ],
       "stockData": {
-        "09880": { "quote": { "currentPrice": 98.4 }, "fundamentals": { "dividendYield": 0 } }
+        "03333": { "quote": { "currentPrice": 38.8 }, "fundamentals": { "dividendYield": 0 } }
       }
     },
     {
       "name": "边界-舍入平局-每股真实成本5.005",
       "_note": "Math.round(500.5)=501 → 5.01；Python round(500.5)=500(银行家) → 5.0。这条专抓舍入语义差异",
       "positions": [
-        { "stockCode": "600009", "shares": 200, "buyPrice": 5.005, "totalCost": 1001 }
+        { "stockCode": "888007", "shares": 200, "buyPrice": 5.005, "totalCost": 1001 }
       ],
       "stockData": {
-        "600009": { "quote": { "currentPrice": 5.2 }, "fundamentals": { "dividendYield": 2.0 } }
+        "888007": { "quote": { "currentPrice": 5.2 }, "fundamentals": { "dividendYield": 2.0 } }
       }
     },
     {
       "name": "边界-舍入平局-每股真实成本0.905(有分红抵扣)",
       "positions": [
         {
-          "stockCode": "600010",
+          "stockCode": "888008",
           "shares": 1000,
           "buyPrice": 1.005,
           "totalCost": 1005,
@@ -132,31 +133,31 @@
         }
       ],
       "stockData": {
-        "600010": { "quote": { "currentPrice": 1.2 }, "fundamentals": { "dividendYield": 3.5 } }
+        "888008": { "quote": { "currentPrice": 1.2 }, "fundamentals": { "dividendYield": 3.5 } }
       }
     },
     {
       "name": "边界-盈亏百分比平局3.125%",
       "_note": "32/1024=0.03125 → ×10000=312.5 平局；JS 3.13 / Python round 3.12",
       "positions": [
-        { "stockCode": "600011", "shares": 100, "buyPrice": 10.24, "totalCost": 1024 }
+        { "stockCode": "888009", "shares": 100, "buyPrice": 10.24, "totalCost": 1024 }
       ],
       "stockData": {
-        "600011": { "quote": { "currentPrice": 10.56 }, "fundamentals": { "dividendYield": 4.0 } }
+        "888009": { "quote": { "currentPrice": 10.56 }, "fundamentals": { "dividendYield": 4.0 } }
       }
     },
     {
       "name": "多持仓组合汇总",
       "positions": [
-        { "stockCode": "600036", "shares": 700, "buyPrice": 22.29, "totalCost": 15603 },
-        { "stockCode": "01810", "shares": 5600, "buyPrice": 36.229, "totalCost": 202882.4,
-          "dividends": [{ "total": 672 }] },
-        { "stockCode": "600900", "shares": 500, "buyPrice": 18.459 }
+        { "stockCode": "888001", "shares": 300, "buyPrice": 11.11, "totalCost": 3333 },
+        { "stockCode": "01111", "shares": 800, "buyPrice": 12.5, "totalCost": 10000,
+          "dividends": [{ "total": 80 }] },
+        { "stockCode": "888002", "shares": 100, "buyPrice": 25.5 }
       ],
       "stockData": {
-        "600036": { "quote": { "currentPrice": 28.5 }, "fundamentals": { "dividendYield": 6.2 } },
-        "01810": { "quote": { "currentPrice": 42.15 }, "fundamentals": { "dividendYield": 1.15 } },
-        "600900": { "quote": { "currentPrice": 19.8 }, "fundamentals": { "dividendYield": 4.0 } }
+        "888001": { "quote": { "currentPrice": 13.5 }, "fundamentals": { "dividendYield": 5.0 } },
+        "01111": { "quote": { "currentPrice": 15.2 }, "fundamentals": { "dividendYield": 1.5 } },
+        "888002": { "quote": { "currentPrice": 26.8 }, "fundamentals": { "dividendYield": 4.0 } }
       }
     }
   ]
