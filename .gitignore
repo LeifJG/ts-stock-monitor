@@ -34,3 +34,7 @@ backend/.pgdata/
 
 # 一次性验证脚本（临时保留，不进版本库）
 tmp/
+
+# Python 编译产物
+__pycache__/
+*.pyc
