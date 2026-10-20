@@ -17,13 +17,18 @@ const { Text } = Typography;
 
 // ─── 存储键名 ──────────────────────────────────────────────
 
+// 导出/导入覆盖的全部本地数据键。
+// 注意：交易笔记（trading-notes）和主题（theme）曾经漏在这里，
+// 导致「导出备份」其实没备份笔记 —— 清浏览器缓存就真丢了，已补上。
 const STORAGE_KEYS = {
   portfolio: "ts-stock-monitor:portfolio",
   watchlist: "ts-stock-monitor:watchlist",
   alertRules: "ts-stock-monitor:alertRules",
   gridSettings: "ts-stock-monitor:grid-settings2",
+  tradingNotes: "ts-stock-monitor:trading-notes",
   viewMode: "ts-stock-monitor:viewMode",
   showPortfolio: "ts-stock-monitor:showPortfolio",
+  theme: "ts-stock-monitor:theme",
 };
 
 // ─── 类型 ─────────────────────────────────────────────────
