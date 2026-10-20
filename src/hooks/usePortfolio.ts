@@ -8,6 +8,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { PORTFOLIO_ENDPOINT } from "@/lib/api-endpoints";
 import type { Position, DividendRecord, StockData } from "@/lib/types";
 import {
   normalizePositions,
@@ -56,7 +57,7 @@ function genId(): string {
 
 async function restoreFromServer(setPositions: (p: Position[]) => void): Promise<void> {
   try {
-    const res = await fetch("/api/portfolio");
+    const res = await fetch(PORTFOLIO_ENDPOINT);
     if (!res.ok) return;
     const json = await res.json();
     const list = Array.isArray(json?.data) ? json.data : [];

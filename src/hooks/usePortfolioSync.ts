@@ -5,6 +5,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PORTFOLIO_SYNC_ENDPOINT } from "@/lib/api-endpoints";
 import type { Position } from "@/lib/types";
 
 /**
@@ -21,7 +22,7 @@ export function usePortfolioSync(positions: Position[]) {
 
     const timer = setTimeout(async () => {
       try {
-        await fetch("/api/portfolio/sync", {
+        await fetch(PORTFOLIO_SYNC_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // route 期望 { data: [...] } 包裹（裸数组会被 400 拒绝）

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PORTFOLIO_SYNC_ENDPOINT } from "@/lib/api-endpoints";
 import { Modal, Input, Tabs, message, Button, Space } from "antd";
 import { SyncOutlined } from "@ant-design/icons";
 
@@ -145,7 +146,7 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
       // 调用 API 保存
       try {
         setSyncing(true);
-        const res = await fetch("/api/portfolio/sync", {
+        const res = await fetch(PORTFOLIO_SYNC_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: parsed, source: "paste" }),
@@ -177,7 +178,7 @@ export default function PortfolioSyncModal({ open, onClose, onSync }: PortfolioS
       
       try {
         setSyncing(true);
-        const res = await fetch("/api/portfolio/sync", {
+        const res = await fetch(PORTFOLIO_SYNC_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: parsed, source: "json" }),
