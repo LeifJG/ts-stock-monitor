@@ -154,6 +154,15 @@ def post(url: str, payload) -> tuple[int, str]:
         os.unlink(body_path)
 
 
+def _refresh_mirror() -> None:
+    """让后端用 json 重建 PG 镜像（失败只提示，不影响对拍结论）"""
+    out = subprocess.run(
+        f"{ENV_PREFIX} curl -s -m 20 -X POST {NEW}/api/v1/portfolio/mirror/refresh",
+        shell=True, capture_output=True, text=True,
+    ).stdout.strip()
+    print(f"PG 镜像已重建：{out[:120]}" if out else "PG 镜像重建失败（后端可能没起）")
+
+
 def main() -> int:
     if not os.path.exists(PORTFOLIO):
         print(f"持仓文件不存在：{PORTFOLIO}")
@@ -202,6 +211,9 @@ def main() -> int:
                         print(f"          新={lb.strip()}")
     finally:
         restore(snapshot)
+        # 对拍过程中新接口会往 PG 写镜像，还原 json 后镜像就滞后了 ——
+        # 不重建的话 /portfolio/reconcile 会报一堆假差异，误导下一次排查。
+        _refresh_mirror()
         final_sha = sha(PORTFOLIO)
         ok = final_sha == original_sha
         print(f"\n持仓已还原（sha256 {final_sha[:12]}…）{'✅ 与原始一致' if ok else '❌ 与原始不一致！'}")
