@@ -19,8 +19,13 @@ PGDATA="$(pwd)/.pgdata"
 
 case "${1:-up}" in
   up)
+    # 前台调试会占 8000，先停掉后台服务，否则 uvicorn 报 address already in use
+    echo "→ 先停掉后台服务，避免 8000 端口冲突"
+    systemctl --user stop ts-stock-backend 2>/dev/null || true
+    sleep 1
     echo "→ 前台热重载模式（Ctrl+C 退出；改 .py 文件自动重启）"
     echo "→ 接口文档: http://127.0.0.1:8000/docs"
+    echo "→ 调试完记得 ./dev.sh svc 把后台服务开回来"
     exec "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
     ;;
   svc)
