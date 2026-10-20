@@ -4,13 +4,13 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Card, Table, Button, Input, InputNumber, Modal, Form, Statistic,
   Flex, Tag, Typography, Empty, Space, Popconfirm, Tooltip, Row, Col,
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, DollarOutlined,
+  PlusOutlined, MinusOutlined, DeleteOutlined, DollarOutlined,
   FundOutlined, RiseOutlined, FallOutlined,
   GiftOutlined, WalletOutlined, PieChartOutlined,
   SyncOutlined,
@@ -50,7 +50,7 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
   const {
     positions, metrics, summary,
     stockDataMap: combinedStockDataMap,
-    addPosition, removePosition, addDividend, removeDividend,
+    addPosition, removePosition, updatePosition, addDividend, removeDividend,
   } = usePortfolio(stockDataMap);
 
   usePortfolioSync(positions);
@@ -133,6 +133,93 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
         setDivOpen(false);
         setDivPositionId(null);
       }
+    }).catch(() => {});
+  };
+
+  // ── 调仓弹窗（加仓 / 减仓）──────────────────────
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [tradePosition, setTradePosition] = useState<Position | null>(null);
+  const [tradeMode, setTradeMode] = useState<"add" | "reduce">("add");
+  const [tradeForm] = Form.useForm();
+
+  // 当前实时价（调仓默认价）
+  const tradeCurrentPrice = useMemo(() => {
+    if (!tradePosition) return null;
+    return combinedStockDataMap.get(tradePosition.stockCode ?? "")?.quote.currentPrice ?? tradePosition.buyPrice ?? null;
+  }, [tradePosition, combinedStockDataMap]);
+
+  // 打开调仓弹窗
+  const openTrade = (r: Position, mode: "add" | "reduce") => {
+    setTradePosition(r);
+    setTradeMode(mode);
+    setTradeOpen(true);
+    // 预填：股数留空，价格默认实时价（下一个 tick 等表单挂载）
+    setTimeout(() => {
+      tradeForm.setFieldsValue({ price: tradeCurrentPrice ?? undefined, shares: undefined });
+    }, 0);
+  };
+
+  // 监听表单值变化（触发预览重算）
+  const watchShares = Form.useWatch("shares", tradeForm);
+  const watchPrice = Form.useWatch("price", tradeForm);
+
+  // 调仓实时预览：新股数 / 新成本均价 / 新总投入
+  const tradePreview = useMemo(() => {
+    if (!tradePosition) return null;
+    const shares = watchShares as number | undefined;
+    const price = watchPrice as number | undefined;
+    if (!shares || shares <= 0 || !price || price <= 0) return null;
+    const oldShares = tradePosition.shares;
+    const oldCost = tradePosition.totalCost ?? oldShares * (tradePosition.buyPrice ?? 0);
+    if (tradeMode === "add") {
+      const newShares = oldShares + shares;
+      const newCost = oldCost + shares * price;
+      return { newShares, newAvgCost: newCost / newShares, newTotalCost: newCost, delta: shares * price };
+    }
+    if (shares > oldShares) return null; // 减仓超持股，校验会拦截
+    const newShares = oldShares - shares;
+    // 加权平均成本法：均价不变，总投入按剩余股数折算，落袋部分转为已实现收益
+    const avg = tradePosition.buyPrice ?? oldCost / oldShares;
+    return { newShares, newAvgCost: avg, newTotalCost: avg * newShares, delta: shares * price };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradePosition, tradeMode, tradeForm.getFieldValue("shares"), tradeForm.getFieldValue("price")]);
+
+  const handleTrade = () => {
+    tradeForm.validateFields().then((values) => {
+      if (!tradePosition) return;
+      const { shares, price } = values as { shares: number; price: number };
+      if (tradeMode === "add") {
+        // 加仓：加权平均
+        const oldShares = tradePosition.shares;
+        const oldCost = tradePosition.totalCost ?? oldShares * (tradePosition.buyPrice ?? 0);
+        const newShares = oldShares + shares;
+        const newCost = oldCost + shares * price;
+        updatePosition(tradePosition.id!, {
+          shares: newShares,
+          totalCost: newCost,
+          buyPrice: newCost / newShares,
+          lastAddPrice: price, // 记录本次加仓价，供补仓间距判断
+        });
+        message.success(`已加仓 ${tradePosition.stockName} +${shares} 股 @¥${price}`);
+      } else {
+        const newShares = tradePosition.shares - shares;
+        if (newShares <= 0) {
+          // 清仓：整条删除
+          removePosition(tradePosition.id!);
+          message.success(`已清仓 ${tradePosition.stockName}（+¥${(shares * price).toFixed(2)} 落袋）`);
+        } else {
+          // 减仓：均价不变，总投入按剩余股数折算
+          const avg = tradePosition.buyPrice ?? 0;
+          updatePosition(tradePosition.id!, {
+            shares: newShares,
+            totalCost: avg * newShares,
+          });
+          message.success(`已减仓 ${tradePosition.stockName} -${shares} 股 @¥${price}`);
+        }
+      }
+      setTradeOpen(false);
+      setTradePosition(null);
+      tradeForm.resetFields();
     }).catch(() => {});
   };
 
@@ -308,14 +395,30 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
       },
     },
     {
-      title: "操作", key: "actions", width: 90,
+      title: "操作", key: "actions", width: 150,
       render: (_: any, r: Position) => (
-        <Space size="small">
-          <Button
-            type="link" size="small"
-            icon={<GiftOutlined />}
-            onClick={() => { setDivPositionId(r.id ?? null); setDivOpen(true); }}
-          />
+        <Space size={0}>
+          <Tooltip title="加仓">
+            <Button
+              type="link" size="small"
+              icon={<PlusOutlined />}
+              onClick={() => openTrade(r, "add")}
+            />
+          </Tooltip>
+          <Tooltip title="减仓 / 清仓">
+            <Button
+              type="link" size="small"
+              icon={<MinusOutlined />}
+              onClick={() => openTrade(r, "reduce")}
+            />
+          </Tooltip>
+          <Tooltip title="记录分红">
+            <Button
+              type="link" size="small"
+              icon={<GiftOutlined />}
+              onClick={() => { setDivPositionId(r.id ?? null); setDivOpen(true); }}
+            />
+          </Tooltip>
           <Popconfirm
             title="删除此持仓？"
             description="分红记录也会一起删除"
@@ -539,6 +642,103 @@ export default function PortfolioPanel({ stockDataMap }: PortfolioPanelProps) {
             <input type="date" style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-color)" }}
               defaultValue={new Date().toISOString().slice(0, 10)} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* ═══ 调仓弹窗（加仓 / 减仓）═══ */}
+      <Modal
+        title={
+          tradePosition && (
+            <Space size={8}>
+              <span>{tradeMode === "add" ? "加仓" : "减仓 / 清仓"}</span>
+              <span style={{ fontWeight: 500, color: "var(--text-tertiary)", fontSize: 13 }}>
+                {tradePosition.stockName} · 现持 {tradePosition.shares.toLocaleString()} 股 · 均价 ¥{fmt(tradePosition.buyPrice)}
+              </span>
+            </Space>
+          )
+        }
+        open={tradeOpen}
+        onCancel={() => { setTradeOpen(false); setTradePosition(null); tradeForm.resetFields(); }}
+        onOk={handleTrade}
+        okText={tradeMode === "add" ? "确认加仓" : "确认减仓"}
+        cancelText="取消"
+        width={400}
+      >
+        <Form form={tradeForm} layout="vertical" size="small">
+          <Row gutter={8}>
+            <Col span={12}>
+              <Form.Item
+                name="shares"
+                label="股数"
+                rules={[
+                  { required: true, message: "请输入股数" },
+                  {
+                    validator: (_, v) =>
+                      tradeMode === "reduce" && tradePosition && v > tradePosition.shares
+                        ? Promise.reject(new Error(`最多可减 ${tradePosition.shares} 股`))
+                        : Promise.resolve(),
+                  },
+                ]}
+              >
+                <InputNumber
+                  style={{ width: "100%" }}
+                  min={1}
+                  step={100}
+                  precision={0}
+                  placeholder="如 500"
+                  autoFocus
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="price"
+                label="成交价（元）"
+                rules={[{ required: true, message: "请输入价格" }]}
+              >
+                <InputNumber style={{ width: "100%" }} min={0.01} step={0.01} placeholder="默认实时价" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* 快捷比例（减仓用） */}
+          {tradeMode === "reduce" && tradePosition && (
+            <Space size={4} style={{ marginBottom: 8 }}>
+              {[0.25, 0.5, 0.75, 1].map((r) => (
+                <Button
+                  key={r}
+                  size="small"
+                  onClick={() => {
+                    const s = Math.round(tradePosition.shares * r / 100) * 100;
+                    tradeForm.setFieldsValue({
+                      shares: r === 1 ? tradePosition.shares : Math.max(100, s),
+                      price: tradeForm.getFieldValue("price") || tradeCurrentPrice,
+                    });
+                  }}
+                >
+                  {r === 1 ? "全部" : `${r * 100}%`}
+                </Button>
+              ))}
+            </Space>
+          )}
+
+          {/* 实时预览 */}
+          {tradePreview && (
+            <div style={{
+              padding: "8px 12px", borderRadius: 6, fontSize: 12,
+              background: "var(--bg-card)", border: "1px solid var(--border-color)",
+            }}>
+              <div style={{ color: "var(--text-tertiary)", marginBottom: 4 }}>调仓后预览</div>
+              <div style={{ display: "flex", gap: 16 }}>
+                <span>持股 <b style={{ color: "var(--text-primary)" }}>{tradePreview.newShares.toLocaleString()}</b></span>
+                <span>均价 <b style={{ color: "var(--text-primary)" }}>¥{fmt(tradePreview.newAvgCost)}</b></span>
+                <span>总投入 <b style={{ color: "var(--text-primary)" }}>¥{fmt(tradePreview.newTotalCost)}</b></span>
+              </div>
+              <div style={{ color: tradeMode === "add" ? "var(--red)" : "var(--green)", marginTop: 2 }}>
+                {tradeMode === "add" ? "投入" : "落袋"} ¥{fmt(tradePreview.delta)}
+              </div>
+            </div>
+          )}
         </Form>
       </Modal>
 
