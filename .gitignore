@@ -28,3 +28,6 @@ npm-debug.log*
 scripts/__pycache__/
 yarn-debug.log*
 yarn-error.log*
+
+# PostgreSQL 本地实例数据目录（pgserver）
+backend/.pgdata/

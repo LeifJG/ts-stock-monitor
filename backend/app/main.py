@@ -36,8 +36,23 @@ app.include_router(read_api.router, prefix="/api/v1")
 # ── 健康检查（systemd 验活 + 排查第一入口） ──────────────────
 @app.get("/health")
 def health() -> dict:
+    """服务存活 + 数据库连通性（阶段②起带 DB 状态）"""
+    from sqlalchemy import text
+
+    from .db import get_engine
+
+    db_ok, db_rows = False, 0
+    try:
+        with get_engine().connect() as conn:
+            db_rows = conn.execute(text("select count(*) from caches")).scalar() or 0
+        db_ok = True
+    except Exception:
+        db_ok = False
+
     return {
         "status": "ok",
-        "stage": "phase-1 readonly mirror",
+        "stage": "phase-2 cache-to-postgres",
         "data_dir_exists": DATA_DIR.exists(),
+        "db_ok": db_ok,
+        "db_cache_rows": db_rows,
     }
