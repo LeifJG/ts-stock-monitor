@@ -38,3 +38,9 @@ tmp/
 # Python 编译产物
 __pycache__/
 *.pyc
+
+# 本地数据备份（含真实持仓，绝不入库）
+backup/
+
+# 由真实持仓派生的计算基准（含股数与成本，本地生成不入库）
+tests/fixtures/ts_calc_output_real.json

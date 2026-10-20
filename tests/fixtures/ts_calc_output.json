@@ -1,0 +1,529 @@
+{
+  "fxRate": 0.8563,
+  "results": [
+    {
+      "name": "A股-标准localStorage格式-有分红",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "p1",
+            "stockCode": "600036",
+            "stockName": "招商银行",
+            "shares": 700,
+            "buyPrice": 22.29,
+            "totalCost": 15603,
+            "baseShares": 700
+          },
+          "metrics": {
+            "currentPrice": 28.5,
+            "marketValue": 19950,
+            "totalProfit": 6867,
+            "totalProfitPct": 44.01,
+            "totalDividends": 2520,
+            "realCost": 13083,
+            "realCostPerShare": 18.69,
+            "costYield": 9.45
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 15603,
+        "totalMarketValue": 19950,
+        "totalDividends": 2520,
+        "totalProfit": 6867,
+        "totalProfitPct": 44.01,
+        "annualDividendIncome": 1236.9,
+        "dividendYieldOnCost": 7.93,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "港股-有分红-汇率换算",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "01810",
+            "stockName": "01810",
+            "shares": 5600,
+            "buyPrice": 36.229,
+            "totalCost": 202882.4,
+            "baseShares": 5000,
+            "lastAddPrice": 34.1
+          },
+          "metrics": {
+            "currentPrice": 36.09,
+            "marketValue": 202121.05,
+            "totalProfit": 28968.29,
+            "totalProfitPct": 16.67,
+            "totalDividends": 575.43,
+            "realCost": 173152.77,
+            "realCostPerShare": 30.92,
+            "costYield": 1.34
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 173728.2,
+        "totalMarketValue": 202121.05,
+        "totalDividends": 575.43,
+        "totalProfit": 28968.28,
+        "totalProfitPct": 16.67,
+        "annualDividendIncome": 2324.39,
+        "dividendYieldOnCost": 1.34,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "港股同步json格式-code/cost-无分红",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "09988",
+            "stockName": "09988",
+            "shares": 1500,
+            "buyPrice": 137.182,
+            "totalCost": 205772.99999999997,
+            "baseShares": 1500
+          },
+          "metrics": {
+            "currentPrice": 135.55,
+            "marketValue": 203328.44,
+            "totalProfit": 27125.02,
+            "totalProfitPct": 15.39,
+            "totalDividends": 0,
+            "realCost": 176203.42,
+            "realCostPerShare": 117.47,
+            "costYield": 0
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 176203.42,
+        "totalMarketValue": 203328.44,
+        "totalDividends": 0,
+        "totalProfit": 27125.02,
+        "totalProfitPct": 15.39,
+        "annualDividendIncome": 0,
+        "dividendYieldOnCost": 0,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "无实时行情-回落买入价",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600900",
+            "stockName": "600900",
+            "shares": 500,
+            "buyPrice": 18.459,
+            "totalCost": 9229.5,
+            "baseShares": 500
+          },
+          "metrics": {
+            "currentPrice": 18.46,
+            "marketValue": 9229.5,
+            "totalProfit": 0,
+            "totalProfitPct": 0,
+            "totalDividends": 0,
+            "realCost": 9229.5,
+            "realCostPerShare": 18.46,
+            "costYield": 0
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 9229.5,
+        "totalMarketValue": 9229.5,
+        "totalDividends": 0,
+        "totalProfit": 0,
+        "totalProfitPct": 0,
+        "annualDividendIncome": 0,
+        "dividendYieldOnCost": 0,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "短码港股700-3位数字不算港股(边界)",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "700",
+            "stockName": "700",
+            "shares": 200,
+            "buyPrice": 320.5,
+            "totalCost": 64100,
+            "baseShares": 200
+          },
+          "metrics": {
+            "currentPrice": 355,
+            "marketValue": 71000,
+            "totalProfit": 6900,
+            "totalProfitPct": 10.76,
+            "totalDividends": 0,
+            "realCost": 64100,
+            "realCostPerShare": 320.5,
+            "costYield": 2.66
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 64100,
+        "totalMarketValue": 71000,
+        "totalDividends": 0,
+        "totalProfit": 6900,
+        "totalProfitPct": 10.76,
+        "annualDividendIncome": 1704,
+        "dividendYieldOnCost": 2.66,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "baseShares倒挂-钳到shares",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600941",
+            "stockName": "600941",
+            "shares": 200,
+            "buyPrice": 85.29,
+            "totalCost": 17058,
+            "baseShares": 200
+          },
+          "metrics": {
+            "currentPrice": 92.1,
+            "marketValue": 18420,
+            "totalProfit": 1362,
+            "totalProfitPct": 7.98,
+            "totalDividends": 0,
+            "realCost": 17058,
+            "realCostPerShare": 85.29,
+            "costYield": 5.45
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 17058,
+        "totalMarketValue": 18420,
+        "totalDividends": 0,
+        "totalProfit": 1362,
+        "totalProfitPct": 7.98,
+        "annualDividendIncome": 930.21,
+        "dividendYieldOnCost": 5.45,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "坏数据-share为0应过滤",
+      "droppedByNormalize": 2,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_2",
+            "stockCode": "600887",
+            "stockName": "600887",
+            "shares": 300,
+            "buyPrice": 28.6,
+            "totalCost": 8580,
+            "baseShares": 300
+          },
+          "metrics": {
+            "currentPrice": 27.2,
+            "marketValue": 8160,
+            "totalProfit": -420,
+            "totalProfitPct": -4.9,
+            "totalDividends": 0,
+            "realCost": 8580,
+            "realCostPerShare": 28.6,
+            "costYield": 4.09
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 8580,
+        "totalMarketValue": 8160,
+        "totalDividends": 0,
+        "totalProfit": -420,
+        "totalProfitPct": -4.9,
+        "annualDividendIncome": 350.88,
+        "dividendYieldOnCost": 4.09,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "总成本全缺-按buyPrice×shares",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "002920",
+            "stockName": "002920",
+            "shares": 150,
+            "buyPrice": 88.88,
+            "totalCost": 13332,
+            "baseShares": 150
+          },
+          "metrics": {
+            "currentPrice": 95.5,
+            "marketValue": 14325,
+            "totalProfit": 993,
+            "totalProfitPct": 7.45,
+            "totalDividends": 0,
+            "realCost": 13332,
+            "realCostPerShare": 88.88,
+            "costYield": 1.93
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 13332,
+        "totalMarketValue": 14325,
+        "totalDividends": 0,
+        "totalProfit": 993,
+        "totalProfitPct": 7.45,
+        "annualDividendIncome": 257.85,
+        "dividendYieldOnCost": 1.93,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "亏损场景-负盈亏百分比",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "09880",
+            "stockName": "09880",
+            "shares": 1350,
+            "buyPrice": 120,
+            "totalCost": 162000,
+            "baseShares": 1350
+          },
+          "metrics": {
+            "currentPrice": 84.26,
+            "marketValue": 113750.89,
+            "totalProfit": -24969.71,
+            "totalProfitPct": -18,
+            "totalDividends": 0,
+            "realCost": 138720.6,
+            "realCostPerShare": 102.76,
+            "costYield": 0
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 138720.6,
+        "totalMarketValue": 113750.89,
+        "totalDividends": 0,
+        "totalProfit": -24969.71,
+        "totalProfitPct": -18,
+        "annualDividendIncome": 0,
+        "dividendYieldOnCost": 0,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "边界-舍入平局-每股真实成本5.005",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600009",
+            "stockName": "600009",
+            "shares": 200,
+            "buyPrice": 5.005,
+            "totalCost": 1001,
+            "baseShares": 200
+          },
+          "metrics": {
+            "currentPrice": 5.2,
+            "marketValue": 1040,
+            "totalProfit": 39,
+            "totalProfitPct": 3.9,
+            "totalDividends": 0,
+            "realCost": 1001,
+            "realCostPerShare": 5.01,
+            "costYield": 2.08
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 1001,
+        "totalMarketValue": 1040,
+        "totalDividends": 0,
+        "totalProfit": 39,
+        "totalProfitPct": 3.9,
+        "annualDividendIncome": 20.8,
+        "dividendYieldOnCost": 2.08,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "边界-舍入平局-每股真实成本0.905(有分红抵扣)",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600010",
+            "stockName": "600010",
+            "shares": 1000,
+            "buyPrice": 1.005,
+            "totalCost": 1005,
+            "baseShares": 1000
+          },
+          "metrics": {
+            "currentPrice": 1.2,
+            "marketValue": 1200,
+            "totalProfit": 295,
+            "totalProfitPct": 29.35,
+            "totalDividends": 100,
+            "realCost": 905,
+            "realCostPerShare": 0.91,
+            "costYield": 4.64
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 1005,
+        "totalMarketValue": 1200,
+        "totalDividends": 100,
+        "totalProfit": 295,
+        "totalProfitPct": 29.35,
+        "annualDividendIncome": 42,
+        "dividendYieldOnCost": 4.18,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "边界-盈亏百分比平局3.125%",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600011",
+            "stockName": "600011",
+            "shares": 100,
+            "buyPrice": 10.24,
+            "totalCost": 1024,
+            "baseShares": 100
+          },
+          "metrics": {
+            "currentPrice": 10.56,
+            "marketValue": 1056,
+            "totalProfit": 32,
+            "totalProfitPct": 3.13,
+            "totalDividends": 0,
+            "realCost": 1024,
+            "realCostPerShare": 10.24,
+            "costYield": 4.13
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 1024,
+        "totalMarketValue": 1056,
+        "totalDividends": 0,
+        "totalProfit": 32,
+        "totalProfitPct": 3.13,
+        "annualDividendIncome": 42.24,
+        "dividendYieldOnCost": 4.13,
+        "positionCount": 1
+      }
+    },
+    {
+      "name": "多持仓组合汇总",
+      "droppedByNormalize": 0,
+      "perPosition": [
+        {
+          "normalized": {
+            "id": "pos_0",
+            "stockCode": "600036",
+            "stockName": "600036",
+            "shares": 700,
+            "buyPrice": 22.29,
+            "totalCost": 15603,
+            "baseShares": 700
+          },
+          "metrics": {
+            "currentPrice": 28.5,
+            "marketValue": 19950,
+            "totalProfit": 4347,
+            "totalProfitPct": 27.86,
+            "totalDividends": 0,
+            "realCost": 15603,
+            "realCostPerShare": 22.29,
+            "costYield": 7.93
+          }
+        },
+        {
+          "normalized": {
+            "id": "pos_1",
+            "stockCode": "01810",
+            "stockName": "01810",
+            "shares": 5600,
+            "buyPrice": 36.229,
+            "totalCost": 202882.4,
+            "baseShares": 5600
+          },
+          "metrics": {
+            "currentPrice": 36.09,
+            "marketValue": 202121.05,
+            "totalProfit": 28968.29,
+            "totalProfitPct": 16.67,
+            "totalDividends": 575.43,
+            "realCost": 173152.77,
+            "realCostPerShare": 30.92,
+            "costYield": 1.34
+          }
+        },
+        {
+          "normalized": {
+            "id": "pos_2",
+            "stockCode": "600900",
+            "stockName": "600900",
+            "shares": 500,
+            "buyPrice": 18.459,
+            "totalCost": 9229.5,
+            "baseShares": 500
+          },
+          "metrics": {
+            "currentPrice": 19.8,
+            "marketValue": 9900,
+            "totalProfit": 670.5,
+            "totalProfitPct": 7.26,
+            "totalDividends": 0,
+            "realCost": 9229.5,
+            "realCostPerShare": 18.46,
+            "costYield": 4.29
+          }
+        }
+      ],
+      "summary": {
+        "totalInvested": 198560.7,
+        "totalMarketValue": 231971.05,
+        "totalDividends": 575.43,
+        "totalProfit": 33985.78,
+        "totalProfitPct": 17.12,
+        "annualDividendIncome": 3957.29,
+        "dividendYieldOnCost": 1.99,
+        "positionCount": 3
+      }
+    }
+  ]
+}
