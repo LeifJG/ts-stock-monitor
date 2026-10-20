@@ -31,3 +31,6 @@ yarn-error.log*
 
 # PostgreSQL 本地实例数据目录（pgserver）
 backend/.pgdata/
+
+# 一次性验证脚本（临时保留，不进版本库）
+tmp/

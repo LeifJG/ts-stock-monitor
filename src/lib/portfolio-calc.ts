@@ -32,6 +32,8 @@ export interface NormalizedPosition {
   totalCost: number;     // 总投入（原币种）
   buyDate?: string;
   dividends: DividendRecord[];
+  baseShares: number;    // 基准股数（补仓额度锚点；老数据 = shares，即已补 0）
+  lastAddPrice?: number; // 上次加仓价（补仓间距控制）
 }
 
 /**
@@ -63,6 +65,11 @@ export function normalizePosition(
       )
     : [];
 
+  // 基准股数：缺省（老数据）= 当前股数（视为未补仓）；防倒挂（> shares 时钳到 shares）
+  const rawBaseShares = numOr(raw.baseShares, 0);
+  const baseShares = rawBaseShares > 0 && rawBaseShares <= shares ? rawBaseShares : shares;
+  const lastAddPriceRaw = numOr(raw.lastAddPrice, 0);
+
   return {
     id: String(raw.id ?? fallbackId ?? `${stockCode}_${shares}`),
     stockCode,
@@ -72,6 +79,8 @@ export function normalizePosition(
     totalCost,
     buyDate: typeof raw.buyDate === "string" ? raw.buyDate : undefined,
     dividends,
+    baseShares,
+    ...(lastAddPriceRaw > 0 ? { lastAddPrice: lastAddPriceRaw } : {}),
   };
 }
 

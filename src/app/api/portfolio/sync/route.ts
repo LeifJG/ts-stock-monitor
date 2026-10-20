@@ -14,6 +14,8 @@ interface Position {
   marketValue?: number;
   addedAt?: string;
   note?: string;
+  baseShares?: number;   // 基准股数（补仓额度锚点）
+  lastAddPrice?: number; // 上次加仓价（补仓间距控制）
   dividends?: Array<{ id: string; date: string; perShare: number; total: number }>;
 }
 
@@ -67,9 +69,14 @@ export async function POST(request: Request) {
       const code = String(item.stockCode || item.code || '');
       // undefined = payload 未携带 → 继承服务端已有；[] = 显式清空
       const dividends = cleanDividends(item.dividends) ?? existingDividends.get(code);
+      // 补仓状态透传：baseShares 缺省=当前股数（视为未补仓）；lastAddPrice 缺省继承服务端
+      const shares = parseInt(item.shares) || 0;
+      const baseShares = parseInt(item.baseShares) || shares;
+      const existing = portfolio.find((p) => p.code === code);
+      const lastAddPrice = parseFloat(item.lastAddPrice) || existing?.lastAddPrice || undefined;
       return {
         code,
-        shares: parseInt(item.shares) || 0,
+        shares,
         cost: parseFloat(item.costPrice || item.cost || item.buyPrice) || 0,
         price: parseFloat(item.currentPrice || item.price) || undefined,
         profit: parseFloat(item.profit) || undefined,
@@ -78,6 +85,8 @@ export async function POST(request: Request) {
         note: `从银河证券同步 (${new Date().toLocaleDateString('zh-CN')})`,
         // 分红记录随持仓持久化到服务端（P0-2：防浏览器 localStorage 丢失）
         ...(dividends ? { dividends } : {}),
+        ...(baseShares !== shares ? { baseShares } : {}),
+        ...(lastAddPrice ? { lastAddPrice } : {}),
       };
     });
 

@@ -129,7 +129,7 @@ export function usePortfolio(externalMap?: Map<string, StockData>) {
     (p: Omit<Position, "id">) => {
       persist((prev) => [
         ...prev,
-        { ...p, id: genId(), dividends: Array.isArray(p.dividends) ? p.dividends : [] },
+        { ...p, id: genId(), baseShares: p.baseShares ?? p.shares, dividends: Array.isArray(p.dividends) ? p.dividends : [] },
       ]);
     },
     [persist]
@@ -143,7 +143,7 @@ export function usePortfolio(externalMap?: Map<string, StockData>) {
   );
 
   const updatePosition = useCallback(
-    (id: string, partial: Partial<Pick<Position, "shares" | "buyPrice" | "totalCost" | "stockName">>) => {
+    (id: string, partial: Partial<Pick<Position, "shares" | "buyPrice" | "totalCost" | "stockName" | "baseShares" | "lastAddPrice">>) => {
       persist((prev) =>
         prev.map((p) => (p.id === id ? { ...p, ...partial } : p))
       );
