@@ -28,6 +28,7 @@ import {
   type NormalizedPosition,
 } from "@/lib/portfolio-calc";
 import type { Position, StockData } from "@/lib/types";
+import { valuationMarginLabel, gridDistanceLabel } from "@/lib/safety-labels";
 
 const CACHE_DIR = path.join(process.cwd(), "cache");
 const REPORT_FILE = path.join(CACHE_DIR, "latest_report.md");
@@ -321,7 +322,7 @@ export async function generateDailyReport(force = false): Promise<{ content: str
   }
   lines.push("");
 
-  // 💡 安全边际
+  // 💡 安全边际（估值口径：现价相对合理估值；网格距离只作中性信息）
   lines.push("─── 💡 安全边际分析 ───");
   lines.push("");
   for (const pos of positions) {
@@ -338,20 +339,19 @@ export async function generateDailyReport(force = false): Promise<{ content: str
         pe <= 0 ? "⚪ PE亏损" :
         pe < 10 ? "🔵 PE偏低" : pe < 15 ? "🟢 PE适中" : pe < 25 ? "🟡 PE偏高" : "🔴 PE高";
     }
-    let safety = "";
+    // ① 真·安全边际：现价 vs 合理估值（不再拿网格距离冒充安全垫）
+    const safety = valuationMarginLabel(adv?.fairValuePremiumPct);
+    // ② 网格距离：中性信息，避免把「波动小」误读成「风险高」
+    let gridNote = "";
     if (buyLevels.length > 0 && price > 0) {
       const nearestBuy = Math.max(...buyLevels.map((g) => g.price));
-      const dropPct = ((price - nearestBuy) / price) * 100;
-      safety =
-        dropPct > 20 ? `🔵 下行空间 ${dropPct.toFixed(0)}%（安全垫充足）` :
-        dropPct > 10 ? `🟢 下行空间 ${dropPct.toFixed(0)}%` :
-        dropPct > 5  ? `🟡 下行空间 ${dropPct.toFixed(0)}%（较薄）` :
-                       `🔴 下行空间仅 ${dropPct.toFixed(0)}%（风险较高）`;
+      gridNote = gridDistanceLabel(((price - nearestBuy) / price) * 100);
     }
-    if (peNote || safety) {
+    if (peNote || safety || gridNote) {
       const parts = [`- **${displayName(pos)}**`];
       if (peNote) parts.push(peNote);
       if (safety) parts.push(safety);
+      if (gridNote) parts.push(gridNote);
       lines.push(parts.join(" · "));
     }
   }
