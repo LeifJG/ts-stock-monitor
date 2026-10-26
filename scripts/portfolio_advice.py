@@ -130,9 +130,27 @@ def fetch_tencent_quotes(codes: list) -> dict:
             "pe": pe,
             "roe": roe_val,
             "dividendYield": div_yield,
+            # 这里是 payout÷PE 的**估算值**；main() 拿到 cninfo 真实每股分红后会覆盖为 cninfo
+            "dividendYieldSource": "estimate" if div_yield else "none",
         }
 
     return result
+
+
+def pick_dividend_yield(dps: float | None, price: float, est_dy: float | None) -> tuple[float, str]:
+    """股息率口径：**真实每股分红优先，估算仅在真实数据缺失时兜底**。
+
+    旧实现是 max(real_dy, est_dy)，本意"保守取大"，但股息率取大等于把
+    用户实际能拿到的现金回报抬高：600036 真实 4.74% 被估成 5.66%，
+    成本股息率从 9.04% 虚高到 10.8%，日报表格与建议文案对不上。
+
+    返回 (股息率 %, 来源)：来源 = cninfo（真实每股分红）/ estimate（payout÷PE 估算）/ none
+    """
+    if dps and dps > 0 and price > 0:
+        return round(dps / price * 100, 2), "cninfo"
+    if est_dy and est_dy > 0:
+        return round(est_dy, 2), "estimate"
+    return 0.0, "none"
 
 
 def fetch_dividend_yields(codes: list) -> dict:
@@ -745,6 +763,8 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         "realCost": round(real_cost, 2),
         "costYield": cost_yield,
         "dividendYield": div_yield,
+        # 股息率来源：cninfo=真实每股分红 / estimate=payout÷PE 估算（港股常为估算）
+        "dividendYieldSource": quote.get("dividendYieldSource"),
         "pe": pe,
         "daysHeld": days_held,
         # ── 估值侧口径（卖出决策的依据，与成本收益率解耦）──
@@ -810,24 +830,21 @@ def main():
     quotes = fetch_tencent_quotes(codes)
     val_cache = load_valuation_cache()  # 估值分位缓存（含港股，补仓闸门/止损分析用）
 
-    # 从 cninfo 获取真实每股股利（并行，严格可靠）
-    # 策略：用真实每股股利算出现价股息率，再和 ROE 估值取大值
+    # 股息率口径：真实每股分红（cninfo TTM）优先，估算（payout÷PE）只在缺失时兜底
+    # 改前是 max(real, est) → 成本股息率虚高（600036 10.8% vs 真实 9.04%）
     try:
         em_divs = fetch_dividend_yields(codes)
         for code, div_data in em_divs.items():
             if div_data and div_data.get("dividend_per_share") is not None and code in quotes:
                 dps = div_data["dividend_per_share"]
                 price = quotes[code].get("price", 0)
-                if price > 0:
-                    real_dy = (dps / price) * 100
-                else:
-                    real_dy = 0
                 est_dy = quotes[code].get("dividendYield", 0) or 0
-                best_dy = round(max(real_dy, est_dy), 2)
-                quotes[code]["dividendYield"] = best_dy
+                dy, src = pick_dividend_yield(dps, price, est_dy)
+                quotes[code]["dividendYield"] = dy
+                quotes[code]["dividendYieldSource"] = src
                 quotes[code]["dividendPerShare"] = dps
     except Exception:
-        pass  # cninfo 不可用时静默回退到估值
+        pass  # cninfo 不可用时静默回退到估算值（来源标记为 estimate）
 
     # 逐个分析
     advice = []

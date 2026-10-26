@@ -27,7 +27,31 @@ if str(SCRIPTS) not in sys.path:
 import portfolio_advice as pa  # noqa: E402
 
 
-# ─── 工具 ───────────────────────────────────────────────────
+# ─── 股息率口径 ─────────────────────────────────────────────
+
+def test_pick_dividend_yield_prefers_real_dps():
+    """真实每股分红优先：2.016 / 42.50 = 4.74%，不得被 payout÷PE 估算的 5.66% 顶掉"""
+    dy, src = pa.pick_dividend_yield(2.016, 42.50, 5.66)
+    assert (dy, src) == (4.74, "cninfo")
+
+
+def test_pick_dividend_yield_falls_back_to_estimate():
+    """真实分红缺失（港股常见）→ 用估算兜底，并标注来源"""
+    dy, src = pa.pick_dividend_yield(None, 30.0, 2.65)
+    assert (dy, src) == (2.65, "estimate")
+
+
+def test_pick_dividend_yield_no_source():
+    dy, src = pa.pick_dividend_yield(None, 30.0, None)
+    assert (dy, src) == (0.0, "none")
+
+
+def test_pick_dividend_yield_zero_price():
+    dy, src = pa.pick_dividend_yield(1.0, 0, 3.0)
+    assert (dy, src) == (3.0, "estimate")
+
+
+# ─── 卖出侧规则 ─────────────────────────────────────────────
 
 def actions(advice_list: list) -> list:
     return [a["action"] for a in advice_list]
