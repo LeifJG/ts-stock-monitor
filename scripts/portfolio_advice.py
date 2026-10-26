@@ -163,6 +163,161 @@ def load_valuation_cache() -> dict:
         return {}
 
 
+# ─── 卖出规则阈值（口径可调，改这里就够）────────────────────
+# 设计原则（价值派口径）：卖出由「估值」驱动；成本收益率只衡量仓位与个人收益，
+# 不作为独立触发条件 —— 成本价是沉没成本锚，跟股票现在贵不贵无关。
+SELL_PCT_HIGH = 70.0          # 估值分位 ≥70% → 偏贵
+SELL_PCT_VERY_HIGH = 85.0     # 估值分位 ≥85% → 很贵，可脱离浮盈单独提示减仓
+SELL_PCT_NEUTRAL = 50.0       # 估值分位 <50% → 判定为「不贵」，即使现价超中位数也不卖
+SELL_PROFIT_CONFIRM = 15.0    # 浮盈 ≥15% 仅作「确认/加码」条件，不是触发条件
+SELL_PROFIT_MIN = 5.0         # 估值极贵时的最小浮盈门槛（<5% 只提示不动手）
+SELL_ABOVE_FAIR_PREMIUM = 5.0  # 现价需高于合理估值 5% 以上才算「贵过历史中位数」
+FAIR_PE_RATIO_MIN = 0.5       # PE 中位数/当前 PE 越界 → 中位数锚失效（盈利暴增/断崖）
+FAIR_PE_RATIO_MAX = 2.0
+
+# 说明：fair_value 用 valuation_cache 的 5 年倍数中位数反推（纯数据锚，不做盈利预测），
+#      并夹在 0.5x–2x 现价之间，避免中位数断代造成的荒谬值。
+
+
+def estimate_fair_value(val: dict | None, price: float, pe: float | None) -> tuple[float | None, str | None]:
+    """用历史倍数中位数反推合理估值。
+
+    盈利股：price × (PE 5年中位数 / 当前 PE)
+    亏损股：price × (PB 5年中位数 / 当前 PB)，比值越界（>3x 或 <1/3）视为中位数不可比，放弃
+    返回 (合理估值, 锚说明)；数据不足返回 (None, None)
+    """
+    if not price or price <= 0:
+        return None, None
+    v = val or {}
+    pe_med = v.get("pe_median_5y")
+    pb_med = v.get("pb_median_5y")
+    pb_now = v.get("pb")
+    fv, basis = None, None
+    if pe is not None and pe > 0 and pe_med and pe_med > 0:
+        ratio = pe_med / pe
+        # 盈利暴增会让当前 PE 远低于中位数 → 中位数锚失效，改走 PB
+        if FAIR_PE_RATIO_MIN <= ratio <= FAIR_PE_RATIO_MAX:
+            fv, basis = price * ratio, "PE 5年中位数"
+    if fv is None and pb_now and pb_now > 0 and pb_med and pb_med > 0:
+        ratio = pb_med / pb_now
+        if 1 / 3 <= ratio <= 3:
+            fv, basis = price * ratio, "PB 5年中位数"
+    if fv is None:
+        return None, None
+    fv = min(max(fv, price * 0.5), price * 2.0)
+    return round(fv, 2), basis
+
+
+def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_label: str,
+                         fair_value: float | None, current_price: float, shares: int) -> list:
+    """卖出侧建议（纯函数，便于单测）。
+
+    规则（按优先级，命中即返）：
+      R1 分位 ≥85（很贵）
+          浮盈 >15% → 部分止盈 25%
+          浮盈 >5%  → 估值高位减仓 15%
+          否则      → 估值高位提示（不动手，等反弹）
+      R2 分位 ≥70（偏贵）
+          浮盈 >15% 且 现价高于合理估值(含缓冲) → 部分止盈 25%
+          浮盈 >15% 但未超合理估值             → 浮盈提示，不构成卖点
+          浮盈 >5%                             → 逢高减仓 10%
+      R3 分位 <70 或缺失（估值不贵）
+          浮盈 >15% 且 现价高于合理估值(含缓冲) → 部分止盈 15%（超历史中位数）
+          浮盈 >15%                            → 浮盈提示：估值未贵，不构成卖点
+          浮盈 >5%                             → 浮盈记录（不操作）
+    每条建议带 trigger 字段：估值驱动 / 仓位参考
+    """
+
+    def mk(action: str, reason: str, priority: str, trigger: str) -> list:
+        return [{"action": action, "reason": reason, "priority": priority, "trigger": trigger}]
+
+    pct_txt = f"{blend_pct:.0f}%（{window_label}）" if blend_pct is not None else "缺失"
+    fair_txt = f"，合理估值 {fair_value:.2f}" if fair_value else ""
+    premium = (current_price / fair_value - 1) * 100 if fair_value else None
+    above_fair = premium is not None and premium >= SELL_ABOVE_FAIR_PREMIUM
+    above_fair_txt = f"现价高于合理估值 {premium:.0f}%" if above_fair else "现价未高于合理估值"
+
+    sell_full = max(round(shares * 0.25), 0)    # 部分止盈 25%
+    sell_mid = max(round(shares * 0.15), 0)     # 估值高位减仓 15%
+    sell_small = max(round(shares * 0.10), 0)   # 逢高减仓 10%
+
+    if blend_pct is not None and blend_pct >= SELL_PCT_VERY_HIGH:
+        if cost_diff_pct > SELL_PROFIT_CONFIRM:
+            out = mk("部分止盈",
+                     f"估值分位 {pct_txt} 处于历史高位{fair_txt and '，' + fair_txt[1:]}，"
+                     f"叠加浮盈 {cost_diff_pct:.1f}%，建议减持 20-30%",
+                     "high", "估值驱动")
+            out.append({"action": f"卖 {sell_full} 股",
+                        "reason": f"卖出 {sell_full} 股（约 25% 仓位）；估值高位是卖出理由，浮盈只是佐证",
+                        "priority": "medium", "trigger": "估值驱动"})
+            return out
+        if cost_diff_pct > SELL_PROFIT_MIN:
+            out = mk("估值高位减仓",
+                     f"估值分位 {pct_txt} 已很高，浮盈仅 {cost_diff_pct:.1f}% 也该减——"
+                     f"卖出看估值不看赚多少；建议减持 10-15%",
+                     "high", "估值驱动")
+            out.append({"action": f"卖 {sell_mid} 股",
+                        "reason": f"卖出 {sell_mid} 股（约 15% 仓位），估值高位优先于浮盈多少",
+                        "priority": "medium", "trigger": "估值驱动"})
+            return out
+        return mk("估值高位提示",
+                  f"估值分位 {pct_txt} 处于历史高位，但浮盈仅 {cost_diff_pct:.1f}%（未到 5% 动手线）；"
+                  f"反弹即分批减，别等回撤",
+                  "medium", "估值驱动")
+
+    if blend_pct is not None and blend_pct >= SELL_PCT_HIGH:
+        if cost_diff_pct > SELL_PROFIT_CONFIRM and above_fair:
+            out = mk("部分止盈",
+                     f"估值分位 {pct_txt} 偏高，且 {above_fair_txt}{fair_txt}，"
+                     f"浮盈 {cost_diff_pct:.1f}%；建议减持 20-30%",
+                     "high", "估值驱动")
+            out.append({"action": f"卖 {sell_full} 股",
+                        "reason": f"卖出 {sell_full} 股（约 25% 仓位），估值偏高 + 超合理估值，两个估值条件同时成立",
+                        "priority": "medium", "trigger": "估值驱动"})
+            return out
+        if cost_diff_pct > SELL_PROFIT_CONFIRM:
+            return mk("浮盈提示（不减仓）",
+                      f"浮盈 {cost_diff_pct:.1f}%，但估值分位 {pct_txt} 只是偏高、{above_fair_txt}"
+                      f"{fair_txt}——估值未到卖出条件，不构成卖点",
+                      "medium", "仓位参考")
+        if cost_diff_pct > SELL_PROFIT_MIN:
+            out = mk("逢高减仓",
+                     f"估值分位 {pct_txt} 偏高，浮盈 {cost_diff_pct:.1f}%，可减持 10-15%",
+                     "medium", "估值驱动")
+            out.append({"action": f"卖 {sell_small} 股",
+                        "reason": f"卖出 {sell_small} 股（约 10% 仓位），估值偏高先减一点",
+                        "priority": "low", "trigger": "估值驱动"})
+            return out
+        return []
+
+    # 估值不贵（分位 <70% 或缺失）
+    # 注意：分位 <50% 时一律不卖 —— 10 年分位与 5 年中位数用的是两个窗口，
+    # 会出现「分位很低但现价略高于中位数」的伪信号（如 PE 7、PB 0.94 的银行），
+    # 以分位为主判据，避免窗口打架把便宜货卖飞。
+    if (cost_diff_pct > SELL_PROFIT_CONFIRM and above_fair
+            and blend_pct is not None and blend_pct >= SELL_PCT_NEUTRAL):
+        out = mk("部分止盈",
+                 f"估值分位 {pct_txt} 尚未到偏贵线（{SELL_PCT_HIGH:.0f}%），但{above_fair_txt}"
+                 f"{fair_txt}；卖出理由是现价超过历史中位数，不是赚得多。"
+                 f"建议小比例减持 10-15%",
+                 "high", "估值驱动")
+        out.append({"action": f"卖 {sell_mid} 股",
+                    "reason": f"卖出 {sell_mid} 股（约 15% 仓位），只是回到历史中位数的仓位再平衡",
+                    "priority": "medium", "trigger": "估值驱动"})
+        return out
+    if cost_diff_pct > SELL_PROFIT_CONFIRM:
+        return mk("浮盈提示（不减仓）",
+                  f"浮盈 {cost_diff_pct:.1f}% 是你成本低/前期减仓摊薄的结果，与估值无关；"
+                  f"估值分位 {pct_txt}、{above_fair_txt}{fair_txt}。"
+                  f"分位低于 {SELL_PCT_NEUTRAL:.0f}% 时以分位为准，不因略微超过中位数卖出",
+                  "medium", "仓位参考")
+    if cost_diff_pct > SELL_PROFIT_MIN:
+        return mk("浮盈记录",
+                  f"浮盈 {cost_diff_pct:.1f}%，估值分位 {pct_txt} 不贵，无需操作",
+                  "low", "仓位参考")
+    return []
+
+
 def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     """对单只持仓生成操作建议"""
     # 适配两种字段格式
@@ -312,6 +467,10 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     if blend10 is not None and blend5 is not None and abs(blend10 - blend5) >= 5:
         blend5_suffix = f"；5年分位 {blend5:.0f}%"
 
+    # 合理估值锚（历史倍数中位数反推，纯数据、不做盈利预测）——卖出侧的第二重闸门
+    fair_value, fair_basis = estimate_fair_value(val, current_price, pe)
+    fair_premium_pct = round((current_price / fair_value - 1) * 100, 2) if fair_value else None
+
     # 亏损股判定：PE 负值或缺失，且 PB 绝对值仍高（>3 倍，对亏损公司无安全垫）
     is_loss_stock = (pe is not None and pe < 0) or (eff10 is None and pb10 is None and eff5 is None and pb5 is None)
     loss_no_margin = is_loss_stock and (pb_abs is None or pb_abs > 3)
@@ -394,25 +553,11 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                 "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，估值分位（{window_label}）{blend_pct:.0f}% 合理，可小批量补仓",
                 "priority": "medium",
             })
-    elif cost_diff_pct > 15:
-        cost_advice.append({
-            "action": "部分止盈",
-            "reason": f"盈利 {cost_diff_pct:.1f}%，建议减持 20-30% 锁定利润",
-            "priority": "high",
-        })
-        # 建议减持量
-        sell_shares = round(shares * 0.25)
-        cost_advice.append({
-            "action": f"卖 {sell_shares} 股",
-            "reason": f"卖出 {sell_shares} 股（25% 仓位），落袋为安，回调后再接回",
-            "priority": "medium",
-        })
-    elif cost_diff_pct > 5:
-        cost_advice.append({
-            "action": "逢高减仓",
-            "reason": f"小盈 {cost_diff_pct:.1f}%，可减持 10-15%",
-            "priority": "low",
-        })
+    else:
+        # ── 卖出侧：估值驱动（规则表见 evaluate_sell_advice）──
+        # 成本收益率（cost_diff_pct）在这里只作「确认」与仓位参考，不再单独触发减仓
+        cost_advice.extend(evaluate_sell_advice(
+            cost_diff_pct, blend_pct, window_label, fair_value, current_price, shares))
 
     # ── 策略 2.5: 止损/纪律检查（价值派口径：止损看逻辑破坏，不看跌幅本身）──
     stop_advice = []
@@ -530,6 +675,33 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
             "priority": "info",
         })
 
+    # ── 统一补齐 trigger（触发源）字段：让每条建议能分辨「因为估值」还是「因为仓位/纪律/股息」──
+    for a in cost_advice:
+        if not a.get("trigger"):
+            act = a.get("action", "")
+            a["trigger"] = "纪律" if ("额度" in act or "间隔" in act) else "估值驱动"
+    for a in stop_advice:
+        a.setdefault("trigger", "纪律")
+    for a in div_advice:
+        a.setdefault("trigger", "股息")
+    for a in val_advice:
+        a.setdefault("trigger", "估值")
+
+    # ── 冲突消解：卖出动作已成立时，不再并列「长持吃分红」这类持有建议 ──
+    # 否则同一只票会同时出现「部分止盈」和「持有收息」，看的人无法执行。
+    # 注意：必须按 trigger 判定，否则「浮盈提示（不减仓）」里的「减仓」二字会误判为卖出。
+    has_sell = any(
+        a.get("trigger") == "估值驱动" and (
+            "卖 " in a.get("action", "")
+            or "止盈" in a.get("action", "")
+            or "减仓" in a.get("action", ""))
+        for a in cost_advice
+    )
+    if has_sell:
+        for a in div_advice:
+            if a.get("action") in ("持有收息", "继续持有"):
+                a["priority"] = "info"
+
     # ── 综合操作建议 ──────────────────────────────────
     operations = []
     # 止损/纪律建议最优先，其余按 cost/div/val 顺序
@@ -541,12 +713,14 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
             "action": a["action"],
             "reason": a["reason"],
             "priority": "high",
+            "trigger": a.get("trigger"),
         })
     for a in all_medium[:3]:
         operations.append({
             "action": a["action"],
             "reason": a["reason"],
             "priority": "medium",
+            "trigger": a.get("trigger"),
         })
 
     # 如果没有建议
@@ -573,6 +747,15 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         "dividendYield": div_yield,
         "pe": pe,
         "daysHeld": days_held,
+        # ── 估值侧口径（卖出决策的依据，与成本收益率解耦）──
+        "valuationPct": round(blend_pct, 1) if blend_pct is not None else None,
+        "valuationWindow": window_label if blend_pct is not None else None,
+        # 亏损股没有有效 PE，分位只看 PB → 前端标签要显示「PB 分位」避免误读成"便宜"
+        "valuationBasis": "PB" if (eff10 is None and eff5 is None) else "PE+PB",
+        "fairValue": fair_value,
+        "fairValueBasis": fair_basis,
+        "fairValuePremiumPct": fair_premium_pct,
+        "costProfitPct": round(cost_diff_pct, 2),
         "gridVolatility": round(grid_volatility, 1),
         "gridStep": grid_step,
         "gridLevels": grid_levels,

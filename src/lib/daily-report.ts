@@ -60,7 +60,15 @@ interface AdviceItem {
   stockCode: string;
   stockName?: string;
   pe?: number | null;
-  operations?: Array<{ action: string; reason: string; priority?: string }>;
+  // 估值侧口径（卖出决策依据，与成本收益率解耦）
+  valuationPct?: number | null;
+  valuationWindow?: string | null;
+  valuationBasis?: string | null;
+  fairValue?: number | null;
+  fairValueBasis?: string | null;
+  fairValuePremiumPct?: number | null;
+  costProfitPct?: number | null;
+  operations?: Array<{ action: string; reason: string; priority?: string; trigger?: string }>;
   gridLevels?: Array<{ type: string; price: number; label?: string }>;
 }
 
@@ -208,6 +216,16 @@ export async function generateDailyReport(force = false): Promise<{ content: str
     const peVal = adv?.pe ?? sd?.fundamentals?.pe;
     // PE<=0（亏损股）无估值参考意义，避免「估值偏低可加仓」类误导
     lines.push(`| PE | ${peVal != null && peVal > 0 ? fmt(peVal, 2) : "亏损，不适用"} |`);
+    // 估值侧口径：卖出决策看这两行，不看浮盈百分比
+    if (adv?.valuationPct != null) {
+      const basis = adv.valuationBasis === "PB" ? "PB 分位" : "估值分位";
+      lines.push(`| ${basis} | ${fmt(adv.valuationPct, 0)}%（${adv.valuationWindow ?? "10年"}） |`);
+    }
+    if (adv?.fairValue != null) {
+      const prem = adv.fairValuePremiumPct;
+      const premTxt = prem == null ? "" : `，现价${prem >= 0 ? "溢价" : "折价"} ${Math.abs(prem).toFixed(1)}%`;
+      lines.push(`| 合理估值 | ${cur}${fmt(adv.fairValue)}（${adv.fairValueBasis ?? "历史中位数"}${premTxt}） |`);
+    }
     lines.push(`| 现价股息率 | ${fmt(sd?.fundamentals?.dividendYield, 2)}% |`);
     if (m.costYield > 0) lines.push(`| 成本股息率 | **${fmt(m.costYield)}%** |`);
     lines.push("");
@@ -220,7 +238,9 @@ export async function generateDailyReport(force = false): Promise<{ content: str
         if (op.action.includes("估值偏低") && peVal != null && peVal <= 0) continue;
         const p = op.priority ?? "info";
         const icon = p === "high" ? "🔴" : p === "medium" ? "🟡" : "🔵";
-        lines.push(`- ${icon} **${op.action}**: ${op.reason}`);
+        // 触发源：让「因为估值」「因为仓位」「纪律/股息」一眼可分
+        const tag = op.trigger ? `（${op.trigger}）` : "";
+        lines.push(`- ${icon} **${op.action}**${tag}: ${op.reason}`);
       }
       lines.push("");
     }
