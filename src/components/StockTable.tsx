@@ -384,7 +384,10 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
         const col = m.rating === "wide" ? "var(--green)" : m.rating === "narrow" ? "var(--blue)" : "var(--text-tertiary)";
         return (
           <Tag
-            onClick={() => setMoatModal({ open: true, code: r.quote.code, name: r.quote.name })}
+            onClick={(e) => {
+              e.stopPropagation();   // 别让整行点击把展开行也一起切换
+              setMoatModal({ open: true, code: r.quote.code, name: r.quote.name });
+            }}
             style={{ cursor: "pointer", fontSize: 11, borderColor: col, color: col, whiteSpace: "nowrap" }}
           >
             {m.score} {m.ratingLabel}
@@ -544,6 +547,22 @@ export default function StockTable({ data, triggers, loading, error, insiderTrad
           expandedRowKeys: expandedCode ? [expandedCode] : [],
           onExpand: (expanded, record) => setExpandedCode(expanded ? record.quote.code : null),
         }}
+        onRow={(record) => ({
+          // 整行可点：点任意空白处都能展开/收起（原来只能点小加号）
+          onClick: (e) => {
+            const el = e.target as HTMLElement;
+            // ① 点自带的展开图标 → 交给 onExpand 处理，避免与这里互相抵消
+            if (el.closest(".ant-table-row-expand-icon")) return;
+            // ② 点行内可交互元素（护城河标签、弹窗触发器等）→ 不切换
+            if (el.closest("button, a, input, select, textarea, .ant-tag, .ant-btn, [data-no-row-toggle]")) return;
+            // ③ 正在划词复制数字 → 不切换
+            const sel = typeof window !== "undefined" ? window.getSelection() : null;
+            if (sel && String(sel).length > 0) return;
+            const code = record.quote.code;
+            setExpandedCode((prev) => (prev === code ? null : code));
+          },
+          style: { cursor: "pointer" },
+        })}
         rowClassName={(record) => {
           const hasAlert = triggeredCodes.has(record.quote.code);
           return hasAlert ? "ant-table-row-alert" : "";
