@@ -26,6 +26,7 @@ import RefreshTimer from "@/components/RefreshTimer";
 import DividendCalculator from "@/components/DividendCalculator";
 import PortfolioPanel from "@/components/PortfolioPanel";
 import PortfolioSummary from "@/components/PortfolioSummary";
+import CashPositionCard from "@/components/CashPositionCard";
 import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
@@ -202,6 +203,9 @@ export default function Home() {
       {showPortfolio && (
         <section style={{ marginBottom: 16 }}>
           <PortfolioSummary stockDataMap={dataMap} />
+          <div style={{ marginTop: 12 }}>
+            <CashPositionCard stockDataMap={dataMap} />
+          </div>
           <div style={{ marginTop: 12 }}>
             <PortfolioAdvice stockDataMap={dataMap} />
           </div>
