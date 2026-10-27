@@ -23,6 +23,7 @@ import {
   SunOutlined,
   MoonOutlined,
   DatabaseOutlined,
+  FundOutlined,
   EditOutlined,
 } from "@ant-design/icons";
 import { useTheme } from "@/lib/ThemeContext";
@@ -43,6 +44,8 @@ interface AppHeaderProps {
   showIndustry: boolean;
   onIndustryToggle: () => void;
   showGrid: boolean;
+  showCashBond: boolean;
+  onCashBondToggle: () => void;
   onGridToggle: () => void;
   showReport: boolean;
   onReportToggle: () => void;
@@ -66,6 +69,8 @@ export default function AppHeader({
   showIndustry,
   onIndustryToggle,
   showGrid,
+  showCashBond,
+  onCashBondToggle,
   onGridToggle,
   showReport,
   onReportToggle,
@@ -138,6 +143,12 @@ export default function AppHeader({
       label: "行业分布",
       icon: <PieChartOutlined />,
       onClick: onIndustryToggle,
+    },
+    {
+      key: "cashbond",
+      label: "现金与股债比",
+      icon: <FundOutlined />,
+      onClick: onCashBondToggle,
     },
     {
       key: "grid",
@@ -230,7 +241,7 @@ export default function AppHeader({
 
         {/* 组合 */}
         <Dropdown menu={{ items: portfolioMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small" type={showPortfolio || showIndustry || showGrid ? "primary" : "default"}>
+          <Button size="small" type={showPortfolio || showIndustry || showGrid || showCashBond ? "primary" : "default"}>
             <WalletOutlined /> 组合 <DownOutlined style={{ fontSize: 10 }} />
           </Button>
         </Dropdown>

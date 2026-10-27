@@ -30,6 +30,7 @@ import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
 import GridTradingPanel from "@/components/GridTradingPanel";
+import CashBondPanel from "@/components/CashBondPanel";
 import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
@@ -54,6 +55,7 @@ export default function Home() {
   const [showCalendar, setShowCalendar] = useLocalStorage("ts-stock-monitor:showCalendar", false);
   const [showIndustry, setShowIndustry] = useLocalStorage("ts-stock-monitor:showIndustry", false);
   const [showGrid, setShowGrid] = useLocalStorage("ts-stock-monitor:showGrid", false);
+  const [showCashBond, setShowCashBond] = useLocalStorage("ts-stock-monitor:showCashBond", false);
   const [showReport, setShowReport] = useLocalStorage("ts-stock-monitor:showReport", false);
   const [showNotes, setShowNotes] = useState(false);
   const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
@@ -177,6 +179,8 @@ export default function Home() {
         onIndustryToggle={() => setShowIndustry(!showIndustry)}
         showGrid={showGrid}
         onGridToggle={() => setShowGrid(!showGrid)}
+        showCashBond={showCashBond}
+        onCashBondToggle={() => setShowCashBond(!showCashBond)}
         showReport={showReport}
         onReportToggle={() => setShowReport(true)}
         showNotes={showNotes}
@@ -225,6 +229,13 @@ export default function Home() {
       {showGrid && (
         <section style={{ marginBottom: 16 }}>
           <GridTradingPanel stockDataMap={dataMap} />
+        </section>
+      )}
+
+      {/* ═══ 现金与股债比 ═══ */}
+      {showCashBond && (
+        <section style={{ marginBottom: 16 }}>
+          <CashBondPanel />
         </section>
       )}
 
