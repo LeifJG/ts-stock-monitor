@@ -516,7 +516,26 @@ def main():
             pass
     old.update(result)
     CACHE_FILE.write_text(json.dumps(old, ensure_ascii=False, indent=2))
-    print(json.dumps({"success": ok > 0, "ok": ok, "total": len(codes)}, ensure_ascii=False))
+
+    # ⚠️ 叙述层（data/moat_llm_cache.json）是按「分数」做失效判定的：
+    # 这里重算完分数后，叙述层的文字还停留在旧分数/旧评级（格里说「窄护城河」但其实已 75 分）。
+    # 提醒使用者接着跑 moat_narrative.py，别让前端弹窗显示自相矛盾的结论。
+    stale = 0
+    try:
+        llm_file = CACHE_FILE.parent / "moat_llm_cache.json"
+        if llm_file.exists():
+            llm = json.loads(llm_file.read_text())
+            for c, v in result.items():
+                e = llm.get(c)
+                if not e or e.get("score") != v.get("score"):
+                    stale += 1
+    except Exception:
+        pass
+    if stale:
+        print(f"[提醒] {stale} 只标的的护城河叙述层仍是旧分数，"
+              f"接着跑：.venv/bin/python3 scripts/moat_narrative.py", file=sys.stderr)
+
+    print(json.dumps({"success": ok > 0, "ok": ok, "total": len(codes), "staleNarrative": stale}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
