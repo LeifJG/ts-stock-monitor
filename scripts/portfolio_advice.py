@@ -146,6 +146,9 @@ def pick_dividend_yield(dps: float | None, price: float, est_dy: float | None) -
 
     返回 (股息率 %, 来源)：来源 = cninfo（真实每股分红）/ estimate（payout÷PE 估算）/ none
     """
+    if dps is not None and dps == 0:
+        # dps == 0 是「确认无分红」（港股 empty_hk），不能再用估算值糊上去
+        return 0.0, "none"
     if dps and dps > 0 and price > 0:
         return round(dps / price * 100, 2), "cninfo"
     if est_dy and est_dy > 0:
@@ -162,8 +165,11 @@ def fetch_dividend_yields(codes: list) -> dict:
     raw = batch_fetch_dividends(codes)
     results = {}
     for code, entry in raw.items():
-        if entry and entry.get("dividend_per_share"):
-            results[code] = {"dividend_per_share": entry["dividend_per_share"]}
+        if entry and entry.get("dividend_per_share") is not None:
+            results[code] = {
+                "dividend_per_share": entry["dividend_per_share"],
+                "source": entry.get("source"),
+            }
         else:
             results[code] = None
     return results

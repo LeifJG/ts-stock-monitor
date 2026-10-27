@@ -32,7 +32,10 @@ from net_utils import setup_proxy_env
 
 setup_proxy_env()
 
-import akshare as ak
+try:  # akshare 只在抓数据时需要；惰性化以便纯打分函数可在精简环境（backend venv）下单测
+    import akshare as ak
+except ImportError:  # pragma: no cover
+    ak = None  # type: ignore[assignment]
 
 CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "moat_cache.json"
 FIN_CACHE = Path(__file__).resolve().parent.parent / "data" / "financials_cache.json"
@@ -278,25 +281,52 @@ def score_financial_strength(debt_ratio: float | None, ocf_np: float | None) -> 
 
 
 def score_shareholder_return(dividend_per_share: float | None, price: float | None,
-                             payout_ratio: float | None) -> tuple[float, dict]:
-    """维度4 股东回报（15分）：分红率优先，股息率辅助"""
+                             payout_ratio: float | None,
+                             buyback_pct: float | None = None,
+                             pe: float | None = None) -> tuple[float, dict]:
+    """维度4 股东回报（15分）：分红率为主，股息率+回购收益率为辅
+
+    buyback_pct = 近 12 个月回购股数占股本 %（港股来自东财 RPT_HK_BUYBACK）。
+    回购等价分红率 = buyback_pct × PE（回购金额 ÷ 净利润），与分红率一起进 10 分档；
+    股东总收益率 = 股息率 + 回购收益率，进 5 分档。
+    不加这一项时，腾讯这类「低分红 + 大额回购」的公司会被判 0 分。
+    """
     score = 0.0
     facts = {}
+
+    # ① 分红率（+ 回购等价分红率）10 分
+    payout_all = None
     if payout_ratio is not None:
-        facts["payoutRatio"] = payout_ratio
-        if payout_ratio >= 60:
+        payout_all = payout_ratio
+    if buyback_pct and pe and pe > 0:
+        payout_all = (payout_all or 0.0) + buyback_pct * pe
+        facts["buybackEquivPayout"] = round(buyback_pct * pe, 2)
+    if payout_all is not None:
+        facts["payoutRatio"] = round(payout_all, 2)
+        if payout_all >= 60:
             score += 10
-        elif payout_ratio >= 40:
+        elif payout_all >= 40:
             score += 8
-        elif payout_ratio >= 25:
+        elif payout_all >= 25:
             score += 4
+
+    # ② 股东总收益率（股息率 + 回购收益率）5 分
+    total_yield = None
     if dividend_per_share and price and price > 0:
         dy = round(dividend_per_share / price * 100, 2)
         facts["dividendYield"] = dy
-        if dy >= 5:
+        total_yield = dy + (buyback_pct or 0.0)
+    elif buyback_pct:
+        total_yield = buyback_pct
+    if buyback_pct:
+        facts["buybackPct"] = buyback_pct
+    if total_yield is not None:
+        facts["shareholderYield"] = round(total_yield, 2)
+        if total_yield >= 5:
             score += 5
-        elif dy >= 3:
+        elif total_yield >= 3:
             score += 3
+
     return score, facts
 
 
@@ -358,8 +388,8 @@ def analyze_one(code: str, price: float | None = None) -> dict | None:
         entry = raw.get(code)
         dps = entry.get("dividend_per_share") if entry else None
         payout = None
+        pe_now = get_pe(code)
         if dps and price and price > 0:
-            pe_now = get_pe(code)
             if pe_now and pe_now > 0:
                 eps = price / pe_now
                 if eps > 0:
@@ -367,7 +397,16 @@ def analyze_one(code: str, price: float | None = None) -> dict | None:
                     # 越界视为数据异常（分红超净利润 2 倍 / 负值），不参与评分
                     if payout <= 0 or payout > 200:
                         payout = None
-            s4, f4 = score_shareholder_return(dps, price, payout)
+        # 港股额外取回购收益率（A股/港股分红 + 回购共同构成「股东回报」）
+        buyback_pct = None
+        if _is_hk(code):
+            try:
+                from dividend_data import fetch_hk_buyback_ratio
+                buyback_pct = fetch_hk_buyback_ratio(code)
+            except Exception:
+                buyback_pct = None
+        if dps or buyback_pct:
+            s4, f4 = score_shareholder_return(dps, price, payout, buyback_pct, pe_now)
         else:
             s4, f4 = 0.0, {}
         div_info = f4
