@@ -36,9 +36,30 @@ import akshare as ak
 
 CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "moat_cache.json"
 FIN_CACHE = Path(__file__).resolve().parent.parent / "data" / "financials_cache.json"
+VAL_CACHE = Path(__file__).resolve().parent.parent / "data" / "valuation_cache.json"
 
 HK_CODE_RE = re.compile(r"^\d{5}$")
 WACC_APPROX = 8.0  # 资金成本近似（国内无风险收益 2-3% + 股权风险溢价），Morningstar 口径的简化
+
+# 估值缓存（含 PE），用于反推 EPS → 分红率 payout；1.6MB 级文件，进程内只读一次
+_VAL_MEM: dict = {}
+_VAL_LOADED = False
+
+
+def _load_val_cache() -> dict:
+    global _VAL_MEM, _VAL_LOADED
+    if not _VAL_LOADED:
+        try:
+            _VAL_MEM = json.loads(VAL_CACHE.read_text())
+        except Exception:
+            _VAL_MEM = {}
+        _VAL_LOADED = True
+    return _VAL_MEM
+
+
+def get_pe(code: str) -> float | None:
+    """从估值缓存取当前 PE（TTM），拿不到返回 None"""
+    return _f((_load_val_cache().get(code) or {}).get("pe_ttm"))
 
 
 def _is_hk(code: str) -> bool:
@@ -280,16 +301,22 @@ def score_shareholder_return(dividend_per_share: float | None, price: float | No
 
 
 def score_cash_creation(ocf_np: float | None, roic_series: list[tuple[str, float]]) -> tuple[float, dict]:
-    """维度5 现金创造（10分）：OCF/净利 + ROIC 现金含量交叉验证"""
+    """维度5 现金创造（10分）：OCF/净利
+
+    历史问题：门槛 ≥1.2 就给满分，全池中位数正好 10 分 → 人人满分、没有区分度。
+    现改为 ≥1.5 满分，1.2–1.5 给 7，1.0–1.2 给 5，让「利润含金量」真正拉开差距。
+    """
     if ocf_np is None:
         return 0.0, {}
     score = 0.0
-    if ocf_np >= 1.2:
+    if ocf_np >= 1.5:
         score = 10
+    elif ocf_np >= 1.2:
+        score = 7
     elif ocf_np >= 1.0:
-        score = 8
-    elif ocf_np >= 0.7:
         score = 5
+    elif ocf_np >= 0.7:
+        score = 3
     return score, {}
 
 
@@ -320,17 +347,27 @@ def analyze_one(code: str, price: float | None = None) -> dict | None:
     s3, f3 = score_financial_strength(debt, ocf_np)
     s5, _ = score_cash_creation(ocf_np, roic_s)
 
-    # 维度4 股东回报：分红率数据（dividend_data）→ 股息率需现价
+    # 维度4 股东回报：分红率 payout 优先（15 分制的主体），股息率辅助
+    # 历史 bug：这里第三个参数硬编码 None，导致 payout≥60 的 10 分永远拿不到，
+    # 该维度实际满分只有 5/15 → 全池都被系统性扣掉最多 10 分。
+    # 现用 EPS = 现价 / PE(TTM) 反推 payout = 每股分红 / EPS。
     div_info = None
     try:
         from dividend_data import batch_fetch
         raw = batch_fetch([code])
         entry = raw.get(code)
         dps = entry.get("dividend_per_share") if entry else None
+        payout = None
         if dps and price and price > 0:
-            dy = dps / price * 100
-            # 分红率 ≈ dps / EPS；EPS ≈ price / PE（用估值缓存兜底）→ 简化：先存 dps/股息率
-            s4, f4 = score_shareholder_return(dps, price, None)
+            pe_now = get_pe(code)
+            if pe_now and pe_now > 0:
+                eps = price / pe_now
+                if eps > 0:
+                    payout = round(dps / eps * 100, 2)
+                    # 越界视为数据异常（分红超净利润 2 倍 / 负值），不参与评分
+                    if payout <= 0 or payout > 200:
+                        payout = None
+            s4, f4 = score_shareholder_return(dps, price, payout)
         else:
             s4, f4 = 0.0, {}
         div_info = f4
