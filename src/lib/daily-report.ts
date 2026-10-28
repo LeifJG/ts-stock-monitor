@@ -29,11 +29,14 @@ import {
 } from "@/lib/portfolio-calc";
 import type { Position, StockData } from "@/lib/types";
 import { valuationMarginLabel, gridDistanceLabel } from "@/lib/safety-labels";
+import { buildCashPlan } from "@/lib/cash-plan";
 
 const CACHE_DIR = path.join(process.cwd(), "cache");
 const REPORT_FILE = path.join(CACHE_DIR, "latest_report.md");
 const ADVICE_CACHE = path.join(process.cwd(), "data", "advice_cache.json");
 const VALUATION_CACHE = path.join(CACHE_DIR, "index_valuations.json");
+const CASH_FILE = path.join(process.cwd(), "data", "cash.json");
+const BOND_CACHE = path.join(process.cwd(), "data", "bond_cache.json");
 
 // ─── 时间工具（北京时间 UTC+8） ─────────────────────────────
 
@@ -91,6 +94,7 @@ function loadAdviceMap(): Map<string, AdviceItem> {
 // ─── 市场温度表 ─────────────────────────────────────────────
 
 interface IndexValuation {
+  code?: string;   // 如 000300（沪深300），用于取代表性分位
   name: string;
   pe?: number;
   pct_5y?: number;
@@ -276,8 +280,57 @@ export async function generateDailyReport(force = false): Promise<{ content: str
   lines.push("---");
   lines.push("");
 
-  // 📡 市场温度表
+  // 💵 现金与仓位（分母 = 股票市值 + 现金，没录入就如实说没录入）
   const { indices, asOf } = loadValuations();
+  const hs300Pct = indices.find((i) => i.code === "000300")?.pct_5y ?? null;
+  let cashAmount = 0;
+  let cashRecorded = false;
+  try {
+    const raw = JSON.parse(fs.readFileSync(CASH_FILE, "utf-8"));
+    cashAmount = Number(raw?.amount) || 0;
+    cashRecorded = typeof raw?.updatedAt === "string";
+  } catch {
+    // 未录入
+  }
+  let parkingRate: number | null = null;
+  try {
+    const b = JSON.parse(fs.readFileSync(BOND_CACHE, "utf-8"));
+    parkingRate = b?.repo?.GC007?.rate ?? b?.repo?.GC001?.rate ?? null;
+  } catch {
+    // 无债券缓存时用默认利率兜底
+  }
+  const cashPlan = buildCashPlan({
+    cash: cashAmount,
+    stockValue: summary.totalMarketValue,
+    marketPct: hs300Pct,
+    parkingRate,
+  });
+
+  lines.push("─── 💵 现金与仓位 ───");
+  lines.push("");
+  if (!cashRecorded) {
+    lines.push(`现金未录入 → 仓位无法分析（现按 0 计）。`);
+    lines.push(`按沪深300分位 ${hs300Pct != null ? `${hs300Pct.toFixed(0)}%` : "--"}，建议现金占比 ${cashPlan.band.min}–${cashPlan.band.max}%：`);
+    lines.push(`股票市值 ${fmtMoney(summary.totalMarketValue)} 时对应约 ${fmtMoney((cashPlan.band.min / 100) * summary.totalMarketValue)}–${fmtMoney((cashPlan.band.max / 100) * summary.totalMarketValue)}。`);
+    lines.push(`在页面「可用现金与仓位」录入后，日报即按真实值计算。`);
+  } else {
+    lines.push(`| 指标 | 数值 |`);
+    lines.push(`|:---|:---:|`);
+    lines.push(`| 可用现金 | ${fmtMoney(cashAmount)} |`);
+    lines.push(`| 股票市值 | ${fmtMoney(summary.totalMarketValue)} |`);
+    lines.push(`| 总资产 | ${fmtMoney(cashAmount + summary.totalMarketValue)} |`);
+    lines.push(`| 现金占比 | **${cashPlan.ratioPct ?? 0}%**（建议 ${cashPlan.band.min}–${cashPlan.band.max}%）|`);
+    lines.push("");
+    lines.push(`${cashPlan.level === "short" ? "🔴" : cashPlan.level === "excess" ? "🟡" : "🟢"} ${cashPlan.headline}`);
+    if (cashPlan.gapToMin > 0) lines.push(`- 距建议下限还差 ${fmtMoney(cashPlan.gapToMin)}`);
+    if (cashPlan.excessAboveMax > 0) lines.push(`- 超出建议上限 ${fmtMoney(cashPlan.excessAboveMax)}`);
+    lines.push(`- ${cashPlan.actions[0]}`);
+  }
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+
+  // 📡 市场温度表
   if (indices.length > 0) {
     lines.push("─── 📡 市场温度表 ───" + (asOf ? `（数据日期 ${asOf}）` : ""));
     lines.push("");
