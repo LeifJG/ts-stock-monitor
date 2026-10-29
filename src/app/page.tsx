@@ -27,6 +27,7 @@ import DividendCalculator from "@/components/DividendCalculator";
 import PortfolioPanel from "@/components/PortfolioPanel";
 import PortfolioSummary from "@/components/PortfolioSummary";
 import CashPositionCard from "@/components/CashPositionCard";
+import BiasChecklist from "@/components/BiasChecklist";
 import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
@@ -109,6 +110,25 @@ export default function Home() {
       }
     } catch {} finally { setIndicesLoading(false); }
   }, []);
+
+  // ── 深链：?panel=portfolio,cashbond,alerts,grid,calendar,industry ──
+  // 用途：书签/分享「直接打开某个面板」，也让无头浏览器验证不必先模拟点击菜单。
+  useEffect(() => {
+    const map: Record<string, () => void> = {
+      portfolio: () => setShowPortfolio(true),
+      cashbond: () => setShowCashBond(true),
+      alerts: () => setShowAlertPanel(true),
+      grid: () => setShowGrid(true),
+      calendar: () => setShowCalendar(true),
+      industry: () => setShowIndustry(true),
+      calculator: () => setShowCalculator(true),
+    };
+    const raw = new URLSearchParams(window.location.search).get("panel");
+    if (!raw) return;
+    for (const key of raw.split(",").map((s) => s.trim().toLowerCase())) {
+      map[key]?.();
+    }
+  }, [setShowPortfolio, setShowCashBond, setShowAlertPanel, setShowGrid, setShowCalendar, setShowIndustry, setShowCalculator]);
 
   useEffect(() => { fetchIndices(); }, [fetchIndices]);
 
@@ -208,6 +228,9 @@ export default function Home() {
           </div>
           <div style={{ marginTop: 12 }}>
             <PortfolioAdvice stockDataMap={dataMap} />
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <BiasChecklist stockDataMap={dataMap} />
           </div>
           <div style={{ marginTop: 12 }}>
             <PortfolioPanel stockDataMap={dataMap} />
