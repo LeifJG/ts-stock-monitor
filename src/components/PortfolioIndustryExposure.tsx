@@ -200,7 +200,9 @@ export default function PortfolioIndustryExposure({ stockDataMap }: Props) {
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ fontSize: 11, color: "#888" }}>
             总市值 ¥{(totalValue / 10000).toFixed(2)}万 · HHI {stats.hhi}
-            （&lt;1500 分散 / 1500–2500 中度 / &gt;2500 高度集中）· 分类口径：申万一级（细分来自东财，缺失用内置表兜底）
+            （&lt;1500 分散 / 1500–2500 中度 / &gt;2500 高度集中）· 分类口径：申万一级，
+            其中「互联网平台」（腾讯/阿里/美团/网易/京东/百度/快手等）是自定义单列——
+            申万把它们归在传媒，但生意本质是流量+平台抽成，混在传媒里看不出真实暴露
           </div>
         </>
       )}

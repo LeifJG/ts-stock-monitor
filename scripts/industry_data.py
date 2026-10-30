@@ -28,6 +28,26 @@ from net_utils import setup_proxy_env
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "industry_cache.json")
 CACHE_TTL_DAYS = 90
+# 分类口径版本：改映射/自定义分组时 +1，旧缓存自动失效重算
+# （缓存只判 TTL 会让新口径永远不生效，这种 bug 最难发现）
+SCHEMA_VERSION = 2
+
+# ─── 自定义分组：互联网平台 ────────────────────────────────────
+# 申万把腾讯/阿里/美团这类归在「传媒」，但集中度分析上它们是同一类生意
+# （流量+平台抽成），和影视广告那种"传媒"完全不是一回事。
+# 这里单列，避免"传媒 29%"这种看着像娱乐板块、实际是互联网平台的误导。
+PLATFORM_CODES = {
+    "00700",  # 腾讯控股
+    "09988",  # 阿里巴巴
+    "03690",  # 美团
+    "09999",  # 网易
+    "09618",  # 京东集团
+    "09888",  # 百度集团
+    "01024",  # 快手
+    "09626",  # 哔哩哔哩
+    "09898",  # 微博
+}
+PLATFORM_L1 = "互联网平台"
 
 # ─── 细分行业（东财/自建） → 申万一级 ─────────────────────────
 L2_TO_L1 = {
@@ -137,9 +157,27 @@ FALLBACK = {
     "000338": ("潍柴动力", "汽车零部件"), "000408": ("藏格矿业", "能源金属"),
     "000725": ("京东方A", "光学光电子"), "000963": ("华东医药", "化学制药"),
     "600066": ("宇通客车", "商用车"),
+    # 自选池其余常见票（东财偶尔取不到时兜底）
+    "002007": ("华兰生物", "生物制品"), "002129": ("TCL中环", "光伏"),
+    "002179": ("中航光电", "元件"), "002371": ("北方华创", "半导体设备"),
+    "002410": ("广联达", "软件开发"), "002475": ("立讯精密", "消费电子"),
+    "002920": ("德赛西威", "汽车零部件"), "300124": ("汇川技术", "自动化设备"),
+    "300274": ("阳光电源", "光伏设备"), "600196": ("复星医药", "医药"),
+    "600436": ("片仔癀", "中药"), "600745": ("闻泰科技", "消费电子"),
+    "09626": ("哔哩哔哩", "互联网科技"), "09898": ("微博", "互联网科技"),
 }
 
 _cache = {}
+
+
+def map_l1(code: str, industry: str | None) -> str:
+    """细分行业 + 代码 → 最终一级行业（含自定义分组）。
+    单测见 backend/tests/test_industry_l1.py：改映射或加分组必须同步这里。"""
+    if code in PLATFORM_CODES:
+        return PLATFORM_L1
+    if not industry or industry == "未分类":
+        return "未分类"
+    return L2_TO_L1.get(industry, "其他")
 
 
 def _load_cache():
@@ -162,6 +200,9 @@ def _fresh(entry):
         return False
     # 未分类/其他 属于「没取到」的状态，不能因为缓存没过期就一直当作有效结论
     if entry["l1"] in ("未分类", "其他"):
+        return False
+    # 口径版本不一致（改了映射或自定义分组）→ 必须重算
+    if entry.get("schema") != SCHEMA_VERSION:
         return False
     try:
         ts = datetime.fromisoformat(entry["updatedAt"])
@@ -228,12 +269,13 @@ def resolve(codes, refresh=False):
             if not ind:
                 missing.append(key)
                 ind = "未分类"
-            l1 = L2_TO_L1.get(ind, "未分类" if ind == "未分类" else "其他")
+            l1 = map_l1(key, ind)
             entry = {
                 "code": key,
                 "name": name or key,
                 "industry": ind,
                 "l1": l1,
+                "schema": SCHEMA_VERSION,
                 "source": src,
                 "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
