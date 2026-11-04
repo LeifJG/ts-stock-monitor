@@ -232,6 +232,38 @@ def estimate_fair_value(val: dict | None, price: float, pe: float | None) -> tup
     return round(fv, 2), basis
 
 
+def is_etf_code(code: str) -> bool:
+    """A 股 ETF 代码：沪市 51x/56x/58x，深市 15x/16x。ETF 没有个股 PE 分位。"""
+    c = (code or "").strip()
+    return c.startswith(("51", "56", "58", "15", "16"))
+
+
+def fmt_pct(v, spec: str = ".0f", dash: str = "—") -> str:
+    """None 安全的百分比格式化。
+
+    事故背景：新买入的标的没有估值缓存（例如 588080 科创50ETF、688825 芯联集成），
+    估值分位 blend_pct 为 None；原来直接 f"{fmt_pct(blend_pct)}%" 会抛
+    TypeError: unsupported format string passed to NoneType.__format__，
+    整个脚本崩掉 → /api/portfolio-advice 返回 500 → 前端「分析不出来」。
+    """
+    if v is None:
+        return dash
+    try:
+        return format(float(v), spec)
+    except (TypeError, ValueError):
+        return dash
+
+
+def fmt_num(v, spec: str = ".2f", dash: str = "—") -> str:
+    """None 安全的数字格式化（PB、合理估值这类可能缺失的值）。"""
+    if v is None:
+        return dash
+    try:
+        return format(float(v), spec)
+    except (TypeError, ValueError):
+        return dash
+
+
 def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_label: str,
                          fair_value: float | None, current_price: float, shares: int) -> list:
     """卖出侧建议（纯函数，便于单测）。
@@ -255,8 +287,8 @@ def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_l
     def mk(action: str, reason: str, priority: str, trigger: str) -> list:
         return [{"action": action, "reason": reason, "priority": priority, "trigger": trigger}]
 
-    pct_txt = f"{blend_pct:.0f}%（{window_label}）" if blend_pct is not None else "缺失"
-    fair_txt = f"，合理估值 {fair_value:.2f}" if fair_value else ""
+    pct_txt = f"{fmt_pct(blend_pct)}%（{window_label}）" if blend_pct is not None else "缺失"
+    fair_txt = f"，合理估值 {fmt_num(fair_value)}" if fair_value else ""
     premium = (current_price / fair_value - 1) * 100 if fair_value else None
     above_fair = premium is not None and premium >= SELL_ABOVE_FAIR_PREMIUM
     above_fair_txt = f"现价高于合理估值 {premium:.0f}%" if above_fair else "现价未高于合理估值"
@@ -495,9 +527,14 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     fair_value, fair_basis = estimate_fair_value(val, current_price, pe)
     fair_premium_pct = round((current_price / fair_value - 1) * 100, 2) if fair_value else None
 
-    # 亏损股判定：PE 负值或缺失，且 PB 绝对值仍高（>3 倍，对亏损公司无安全垫）
-    is_loss_stock = (pe is not None and pe < 0) or (eff10 is None and pb10 is None and eff5 is None and pb5 is None)
+    # 三种状态必须分开，否则会把"没有估值数据"当成"亏损股"：
+    #   ① 亏损股：PE < 0
+    #   ② 有分位数据：blend_pct 有值
+    #   ③ 分位缺失：既不是亏损股，也没有估值缓存（新买入/ETF/缓存未建）
+    is_loss_stock = (pe is not None and pe < 0)
+    no_val_data = (not is_loss_stock) and blend_pct is None
     loss_no_margin = is_loss_stock and (pb_abs is None or pb_abs > 3)
+    etf_hint = "（ETF 没有个股 PE 分位，应参考其标的指数分位）" if is_etf_code(code) else ""
 
     cost_advice = []
     if cost_diff_pct < -10:
@@ -505,19 +542,27 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         if loss_no_margin:
             cost_advice.append({
                 "action": "不建议补仓",
-                "reason": f"低于成本 {abs(cost_diff_pct):.1f}%，但亏损股 PB {pb_abs} 倍仍高，无盈利无股息缺安全垫，摊低成本无意义",
+                "reason": (f"低于成本 {abs(cost_diff_pct):.1f}%，但"
+                           + (f"亏损股 PB {fmt_num(pb_abs, '.2f')} 倍仍高" if pb_abs is not None else "亏损股且 PB 数据缺失")
+                           + "，无盈利无股息缺安全垫，摊低成本无意义"),
                 "priority": "high",
+            })
+        elif no_val_data:
+            cost_advice.append({
+                "action": "估值数据缺失·按纪律判断",
+                "reason": f"低于成本 {abs(cost_diff_pct):.1f}%，但该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值再决定，或只按补仓额度/间隔纪律小幅试探",
+                "priority": "medium",
             })
         elif blend_pct is not None and blend_pct > 80:
             cost_advice.append({
                 "action": "不建议补仓",
-                "reason": f"虽低于成本 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{blend_pct:.0f}% 仍处历史高位，回撤未消化完，补仓=接飞刀",
+                "reason": f"虽低于成本 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{fmt_pct(blend_pct)}% 仍处历史高位，回撤未消化完，补仓=接飞刀",
                 "priority": "high",
             })
         elif blend_pct is not None and blend_pct > 50:
             cost_advice.append({
                 "action": "暂缓补仓",
-                "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 但估值分位（{window_label}）{blend_pct:.0f}% 中性偏高，等分位 <50% 或基本面确认再补",
+                "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 但估值分位（{window_label}）{fmt_pct(blend_pct)}% 中性偏高，等分位 <50% 或基本面确认再补",
                 "priority": "medium",
             })
         else:
@@ -525,19 +570,19 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
             if used_pct >= 100:
                 cost_advice.append({
                     "action": "补仓额度已用完",
-                    "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 且估值分位（{window_label}）{blend_pct:.0f}% 偏低，但已补 {used_pct:.0f}%（基准 {base_shares} 股 → 现持 {shares} 股）达上限，纪律优先不再加",
+                    "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 且估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，但已补 {used_pct:.0f}%（基准 {base_shares} 股 → 现持 {shares} 股）达上限，纪律优先不再加",
                     "priority": "medium",
                 })
             elif not spacing_ok:
                 cost_advice.append({
                     "action": "补仓间隔未到",
-                    "reason": f"估值已到补仓区（{window_label}分位 {blend_pct:.0f}%），但{spacing_reason}，避免密集补仓",
+                    "reason": f"估值已到补仓区（{window_label}分位 {fmt_pct(blend_pct)}%），但{spacing_reason}，避免密集补仓",
                     "priority": "medium",
                 })
             else:
                 cost_advice.append({
                     "action": "补仓",
-                    "reason": f"现价低于成本价 {abs(cost_diff_pct):.1f}%，且估值分位（{window_label}）{blend_pct:.0f}% 偏低，适合补仓摊低成本",
+                    "reason": f"现价低于成本价 {abs(cost_diff_pct):.1f}%，且估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，适合补仓摊低成本",
                     "priority": "high",
                 })
                 # 建议补仓量：单批基准仓位的 30%，受剩余额度封顶，取整百
@@ -556,7 +601,7 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         if blend_pct is not None and blend_pct > 50:
             cost_advice.append({
                 "action": "暂缓补仓",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{blend_pct:.0f}% 偏高，暂不补",
+                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏高，暂不补",
                 "priority": "medium",
             })
         elif used_pct >= 100:
@@ -571,10 +616,17 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                 "reason": spacing_reason,
                 "priority": "medium",
             })
+        elif no_val_data:
+            # 没有估值分位（新标的/ETF/缓存缺失）时，不能假装"估值合理"
+            cost_advice.append({
+                "action": "估值数据缺失·仅按纪律判断",
+                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值数据再决定，或按补仓额度/间隔纪律小幅试探",
+                "priority": "medium",
+            })
         else:
             cost_advice.append({
                 "action": "轻仓补入",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，估值分位（{window_label}）{blend_pct:.0f}% 合理，可小批量补仓",
+                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，估值分位（{window_label}）{fmt_pct(blend_pct)}% 合理，可小批量补仓",
                 "priority": "medium",
             })
     else:
@@ -590,7 +642,7 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         if loss_no_margin:
             stop_advice.append({
                 "action": "投机仓纪律",
-                "reason": f"亏损股 PB {pb_abs} 倍，无盈利无股息不符合价值体系；建议仓位上限 5%，回撤超 30% 强制减半",
+                "reason": f"亏损股 PB {fmt_num(pb_abs, '.2f')} 倍，无盈利无股息不符合价值体系；建议仓位上限 5%，回撤超 30% 强制减半",
                 "priority": "high",
             })
         if drawdown >= 30:
@@ -602,7 +654,7 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     elif blend_pct is not None and blend_pct > 95 and drawdown > 10:
         stop_advice.append({
             "action": "基本面止损预警",
-            "reason": f"回撤 {drawdown:.0f}% 但盈利下滑推高估值分位至 {blend_pct:.0f}%——跌了反而更贵；若下季财报盈利继续恶化应减仓",
+            "reason": f"回撤 {drawdown:.0f}% 但盈利下滑推高估值分位至 {fmt_pct(blend_pct)}%——跌了反而更贵；若下季财报盈利继续恶化应减仓",
             "priority": "high",
         })
 
@@ -650,25 +702,25 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         if blend_pct < 20:
             val_advice.append({
                 "action": "估值历史低位",
-                "reason": f"估值分位 {blend_pct:.0f}%（{window_label}）{blend5_suffix}，安全边际厚",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，安全边际厚",
                 "priority": "high",
             })
         elif blend_pct < 50:
             val_advice.append({
                 "action": "估值偏低",
-                "reason": f"估值分位 {blend_pct:.0f}%（{window_label}）{blend5_suffix}，偏低区间",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，偏低区间",
                 "priority": "medium",
             })
         elif blend_pct < 80:
             val_advice.append({
                 "action": "估值中枢",
-                "reason": f"估值分位 {blend_pct:.0f}%（{window_label}）{blend5_suffix}，合理区间",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，合理区间",
                 "priority": "info",
             })
         else:
             val_advice.append({
                 "action": "估值高位",
-                "reason": f"估值分位 {blend_pct:.0f}%（{window_label}）{blend5_suffix}，注意回撤风险",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，注意回撤风险",
                 "priority": "medium",
             })
     elif pe:
@@ -862,7 +914,18 @@ def main():
             pos["stockName"] = quote["name"]
         # 确保 stockCode 字段存在
         pos["stockCode"] = code
-        result = analyze_position(pos, quote, val_cache.get(code))
+        try:
+            result = analyze_position(pos, quote, val_cache.get(code))
+        except Exception as exc:  # 单只失败不能拖垮整批（历史上就是这样整页空白）
+            result = {
+                "stockCode": code,
+                "stockName": pos.get("stockName") or code,
+                "action": "分析失败",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "priority": "low",
+                "degraded": True,
+            }
+            print(f"WARN: analyze failed for {code}: {type(exc).__name__}: {exc}", file=sys.stderr)
         if result:  # 只添加有效的分析结果
             advice.append(result)
 
