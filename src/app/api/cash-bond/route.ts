@@ -57,8 +57,12 @@ export async function GET(_request: NextRequest) {
       etfs?: Array<Record<string, unknown>>;
     }>(BOND_CACHE, {});
 
-    const idx = readJson<{ generated_at?: number | string; indices?: Array<{ code: string; name: string; pe?: number; pct_5y?: number; etf?: string }> }>(
-      INDEX_VAL, { indices: [] });
+    const idx = readJson<{
+      generated_at?: number | string;
+      data_date?: string | null;              // 数据最后一天（不是抓取时间）
+      warnings?: string[];
+      indices?: Array<{ code: string; name: string; pe?: number; pct_5y?: number; etf?: string; status?: string; data_date?: string | null; warning?: string }>;
+    }>(INDEX_VAL, { indices: [] });
 
     const d10 = bond.yields?.d10?.value ?? null;
 
@@ -73,6 +77,8 @@ export async function GET(_request: NextRequest) {
         earningsYield: earningsYield(i.pe),
         erp: erp(i.pe, d10),
         pePct5y: i.pct_5y ?? null,
+        dataDate: i.data_date ?? null,
+        status: i.status ?? null,
       }))
       .sort((a, b) => (b.erp ?? -99) - (a.erp ?? -99));
 
@@ -86,6 +92,8 @@ export async function GET(_request: NextRequest) {
         etfs: bond.etfs ?? [],
         bond10y: d10,
         erp: erpRows,
+        peDataDate: idx.data_date ?? null,     // 指数 PE 数据最后一天，供前端展示"数据日期"
+        peWarnings: idx.warnings ?? [],
       },
     });
   } catch (err) {

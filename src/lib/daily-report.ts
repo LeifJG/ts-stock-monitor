@@ -102,17 +102,23 @@ interface IndexValuation {
   etf?: string;
 }
 
-function loadValuations(): { indices: IndexValuation[]; asOf?: string } {
+function loadValuations(): { indices: IndexValuation[]; asOf?: string; warnings: string[] } {
   try {
     const raw = JSON.parse(fs.readFileSync(VALUATION_CACHE, "utf-8"));
-    // generated_at 为毫秒时间戳或 ISO 字符串
-    let asOf: string | undefined;
-    const g = raw?.generated_at;
-    if (typeof g === "number") asOf = new Date(g + 8 * 3600 * 1000).toISOString().slice(0, 10);
-    else if (typeof g === "string") asOf = g.slice(0, 10);
-    return { indices: Array.isArray(raw?.indices) ? raw.indices : [], asOf };
+    // ⚠️ 用 data_date（数据最后一天）而不是 generated_at（抓取时间）。
+    // 历史事故：中证接口默认 end_date 写死在 2024-06-04，generated_at 每天在变、
+    // 数据其实是两年前的，日报却显示"数据日期 2026-11-03"，误导买入决策。
+    let asOf: string | undefined =
+      typeof raw?.data_date === "string" ? raw.data_date.slice(0, 10) : undefined;
+    if (!asOf) {
+      const g = raw?.generated_at;
+      if (typeof g === "number") asOf = new Date(g + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      else if (typeof g === "string") asOf = g.slice(0, 10);
+    }
+    const warnings: string[] = Array.isArray(raw?.warnings) ? raw.warnings : [];
+    return { indices: Array.isArray(raw?.indices) ? raw.indices : [], asOf, warnings };
   } catch {
-    return { indices: [] };
+    return { indices: [], warnings: [] };
   }
 }
 
@@ -281,7 +287,10 @@ export async function generateDailyReport(force = false): Promise<{ content: str
   lines.push("");
 
   // 💵 现金与仓位（分母 = 股票市值 + 现金，没录入就如实说没录入）
-  const { indices, asOf } = loadValuations();
+  const { indices: rawIndices, asOf, warnings: valWarnings } = loadValuations();
+  // 只统计真的算出了分位的指数：unsupported（如深证 399xxx）与 fallback 参考值不参与
+  const indices = rawIndices.filter((i) => (i as { status?: string }).status !== "unsupported");
+  // 说明：被排除的指数由 cache 的 warnings 统一提示（这里不再重复拼一句）
   const hs300Pct = indices.find((i) => i.code === "000300")?.pct_5y ?? null;
   let cashAmount = 0;
   let cashRecorded = false;
@@ -344,7 +353,12 @@ export async function generateDailyReport(force = false): Promise<{ content: str
       lines.push(`${marker} **${idx.name}** PE=${fmt(idx.pe, 2)} · 近5年${pct.toFixed(0)}%分位 · ${verdict}`);
     }
     lines.push("");
-    lines.push("> 数据来源：中证指数 · PE百分位越低越便宜");
+    lines.push("> 数据来源：中证指数（滚动市盈率，近5年分位）· PE百分位越低越便宜");
+    const staleNotes = Array.from(new Set(valWarnings.filter(Boolean)));
+    if (staleNotes.length > 0) {
+      lines.push(">");
+      for (const n of staleNotes) lines.push(`> ⚠️ ${n}`);
+    }
     lines.push("");
   }
 
