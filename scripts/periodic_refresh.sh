@@ -8,6 +8,9 @@
 #   3. 护城河量化层    data/moat_cache.json          （月更，年报序列驱动）
 #   4. 护城河叙述层    data/moat_llm_cache.json      （月更，只补增量：评分变化/过期/缺失）
 #   5. 股息率缓存     data/dividend_yields.json     （周更，--refresh 全量强制）
+#   6. 指数估值分位    cache/index_valuations.json   （周更兜底，日更链路之外补一次）
+#   7. 国债/逆回购     data/bond_cache.json          （强制刷新，6h TTL）
+#   8. 行业分类       data/industry_cache.json      （90 天 TTL，之前无人刷新）
 #
 # 股票池 = 持仓 ∪ 财务缓存(研究池) —— 与各脚本自身默认口径一致
 # 日志：cache/periodic_refresh.log（追加）
@@ -79,6 +82,18 @@ run_step "护城河量化" "$PY" scripts/moat_data.py
 
 # 5) 护城河叙述层（自带增量判断：新增/评分变化/过期才调 LLM）
 run_step "护城河叙述" "$PY" scripts/moat_narrative.py
+
+# 6) 指数估值分位（日更链路之外再兜一层：定时器偶发失败时，这里补一次，
+#    避免"分位用了很久以前的数据"这种事故）
+run_step "指数估值" "$PY" scripts/fetch_index_valuations.py
+
+# 7) 国债收益率/逆回购（决定现金区间与停泊收益，默认 6 小时 TTL，这里强制刷）
+run_step "债券利率" "$PY" scripts/bond_data.py --force
+
+# 8) 行业分类（90 天 TTL，之前没有任何定时任务负责刷新 → 会永远停留在旧分类；
+#    --refresh 全量重查，网络失败时用内置兜底表，不会清空已有分类）
+#    注意必须传代码池：industry_data.py 不接受空参数（会直接报"缺少代码参数"）
+run_step "行业分类" "$PY" scripts/industry_data.py --refresh "$CODES"
 
 echo "════ $(date '+%F %T') periodic_refresh 结束 FAIL=$FAIL ════" >> "$LOG"
 exit $FAIL

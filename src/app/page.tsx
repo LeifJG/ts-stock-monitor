@@ -29,6 +29,7 @@ import PortfolioSummary from "@/components/PortfolioSummary";
 import CashPositionCard from "@/components/CashPositionCard";
 import BiasChecklist from "@/components/BiasChecklist";
 import PortfolioIndustryExposure from "@/components/PortfolioIndustryExposure";
+import DataFreshnessCard from "@/components/DataFreshnessCard";
 import PortfolioAdvice from "@/components/PortfolioAdvice";
 import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
@@ -112,7 +113,7 @@ export default function Home() {
     } catch {} finally { setIndicesLoading(false); }
   }, []);
 
-  // ── 深链：?panel=portfolio,cashbond,alerts,grid,calendar,industry ──
+  // ── 深链：?panel=portfolio,cashbond,alerts,grid,calendar,industry,data ──
   // 用途：书签/分享「直接打开某个面板」，也让无头浏览器验证不必先模拟点击菜单。
   useEffect(() => {
     const map: Record<string, () => void> = {
@@ -123,6 +124,7 @@ export default function Home() {
       calendar: () => setShowCalendar(true),
       industry: () => setShowIndustry(true),
       calculator: () => setShowCalculator(true),
+      data: () => setShowPortfolio(true), // 数据更新时间卡片在持仓管理页底部
     };
     const raw = new URLSearchParams(window.location.search).get("panel");
     if (!raw) return;
@@ -235,6 +237,10 @@ export default function Home() {
           </div>
           <div style={{ marginTop: 12 }}>
             <BiasChecklist stockDataMap={dataMap} />
+          </div>
+          {/* 数据新鲜度：每个缓存上次更新是什么时候、是不是定时刷的 */}
+          <div style={{ marginTop: 12 }} id="data-freshness">
+            <DataFreshnessCard />
           </div>
           <div style={{ marginTop: 12 }}>
             <PortfolioPanel stockDataMap={dataMap} />

@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """
 fetch_index_valuations.py — 获取主要指数估值数据并缓存
-输出: JSON 到 cache/index_valuations.json（含 PE 百分位）
+输出: cache/index_valuations.json（含 PE 5 年分位 + 数据日期 + 新鲜度）
+
+数据源：
+  - 中证指数 perf 接口（沪市/中证系指数），必须显式传 start_date/end_date
+  - 乐咕乐股 index-basic-pe（深证指数，如 399006 创业板指）
+
+两条铁律（都是踩过坑换来的）：
+  1. 不准硬编码"参考 PE / 参考分位"——抓不到就标 missing，假数字比没数字更危险
+  2. cache 必须记录 data_date（数据最后交易日），前端/日报展示它而不是抓取时间
 """
 
 import json, os, sys, time
@@ -29,16 +37,11 @@ TARGET_INDICES = [
 ]
 
 # 已知的参考数据（在 CSIndex 不可用时的后备）
-FALLBACK_DATA = {
-    "000300": {"name": "沪深300", "pe_range": (8.0, 18.0), "current_pe_approx": 12.5, "pct_approx": 35},
-    "000016": {"name": "上证50",  "pe_range": (7.0, 16.0), "current_pe_approx": 10.8, "pct_approx": 30},
-    "000905": {"name": "中证500", "pe_range": (15, 40),    "current_pe_approx": 24,   "pct_approx": 40},
-    "000922": {"name": "中证红利","pe_range": (5.0, 12.0), "current_pe_approx": 7.0,  "pct_approx": 25},
-    "000852": {"name": "中证1000","pe_range": (18, 50),    "current_pe_approx": 23,   "pct_approx": 30},
-    "399006": {"name": "创业板指","pe_range": (25, 70),    "current_pe_approx": 32,   "pct_approx": 35},
-    "931009": {"name": "红利低波","pe_range": (6.0, 14.0), "current_pe_approx": 7.5,  "pct_approx": 25},
-    "000688": {"name": "科创50",  "pe_range": (30, 80),    "current_pe_approx": 45,   "pct_approx": 40},
-}
+# 注意：这里**故意不保留**硬编码的"参考 PE / 参考分位"。
+# 历史事故：抓取失败时用写死的 PE 12.5 / 分位 35% 顶上，页面上看不出区别，
+# 而真实值是 PE 13.1 / 分位 68% —— 假数字比没有数字危险得多。
+# 抓取失败时一律 status="missing" / pe=None / pct=None，由前端与日报显示"数据缺失"。
+
 
 
 def fetch_pe_data(code: str, years: int = 5) -> list[dict] | None:
@@ -272,26 +275,26 @@ def build_report() -> dict:
                 })
                 log.info("  ℹ️ 深证指数：中证接口无 PE，标记 unsupported（不给假数字）")
             else:
-                fb = FALLBACK_DATA.get(code, {})
+                # 没有真实数据、也没有历史缓存 → 明确承认缺失，不编数字
                 results.append({
                     "code": code,
                     "name": idx["name"],
                     "desc": idx["desc"],
                     "etf": idx["etf"],
-                    "pe": fb.get("current_pe_approx", 0),
-                    "pct_5y": fb.get("pct_approx", 50),
-                    "min_pe": fb.get("pe_range", (0, 100))[0],
-                    "max_pe": fb.get("pe_range", (0, 100))[1],
-                    "last_close": 0,
-                    "date": "(参考值)",
+                    "pe": None,
+                    "pct_5y": None,
+                    "min_pe": None,
+                    "max_pe": None,
+                    "last_close": None,
+                    "date": None,
                     "data_date": None,
                     "stale_days": None,
                     "data_points": 0,
                     "source": None,
-                    "status": "fallback",
-                    "warning": "抓取失败且无历史缓存，当前为硬编码参考值，不可用于决策",
+                    "status": "missing",
+                    "warning": "抓取失败且无历史缓存，本指数不参与温度判断（不提供估测值）",
                 })
-                log.info("  ⚠️ 用后备参考值（不可用于决策）")
+                log.info("  ⚠️ 抓取失败且无缓存：标记 missing（不给估测数字）")
 
     ok_dates = [i["data_date"] for i in results if i.get("data_date")]
     data_date = max(ok_dates) if ok_dates else None

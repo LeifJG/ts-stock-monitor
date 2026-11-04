@@ -292,7 +292,10 @@ export async function generateDailyReport(force = false): Promise<{ content: str
   // 💵 现金与仓位（分母 = 股票市值 + 现金，没录入就如实说没录入）
   const { indices: rawIndices, asOf, warnings: valWarnings } = loadValuations();
   // 只统计真的算出了分位的指数：unsupported（如深证 399xxx）与 fallback 参考值不参与
-  const indices = rawIndices.filter((i) => (i as { status?: string }).status !== "unsupported");
+  const indices = rawIndices.filter((i) => {
+    const st = (i as { status?: string }).status;
+    return st !== "unsupported" && st !== "missing" && i.pct_5y != null;
+  });
   // 说明：被排除的指数由 cache 的 warnings 统一提示（这里不再重复拼一句）
   const hs300Pct = indices.find((i) => i.code === "000300")?.pct_5y ?? null;
   let cashAmount = 0;
@@ -347,7 +350,9 @@ export async function generateDailyReport(force = false): Promise<{ content: str
     lines.push("─── 📡 市场温度表 ───" + (asOf ? `（数据日期 ${asOf}）` : ""));
     lines.push("");
     for (const idx of indices) {
-      const pct = idx.pct_5y ?? 50;
+      // 缺分位不能默认成 50%（会显示"适中"，看起来像有数据）
+      if (idx.pct_5y == null) continue;
+      const pct = idx.pct_5y;
       const [marker, verdict] =
         pct >= 80 ? ["🔴", "⚠️ 偏高"] :
         pct >= 60 ? ["🟡", "中等偏上"] :
