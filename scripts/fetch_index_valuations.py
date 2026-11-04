@@ -8,6 +8,11 @@ import json, os, sys, time
 from datetime import datetime, timedelta, date
 import logging as log
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from net_utils import setup_proxy_env  # noqa: E402
+
+setup_proxy_env()  # 网络不稳/需代理时自动探测，否则直连
+
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "cache", "index_valuations.json")
 CACHE_FILE = os.path.abspath(CACHE_FILE)
 
@@ -107,6 +112,71 @@ def compute_percentile(records: list[dict]) -> dict | None:
     }
 
 
+# 乐咕乐股的 indexCode 形如 399006.SZ；中证接口不提供深证指数（399xxx）PE，
+# 这里作为补充源。注意：乐咕自家 quantile 是全历史分位，我们只用它的 ttmPe 序列
+# 自己算 5 年分位，口径与中证那几只保持一致。
+LEGULUGU_CODES = {
+    "399006": "399006.SZ",   # 创业板指
+    "399001": "399001.SZ",   # 深证成指
+    "399330": "399330.SZ",   # 深证100
+}
+
+
+def fetch_pe_data_legulegu(index_code: str, years: int = 5) -> list[dict] | None:
+    """从乐咕乐股取指数 TTM PE 历史（补充中证接口没有的深证指数）。"""
+    import requests
+    import py_mini_racer
+    import pandas as pd
+
+    lg_code = LEGULUGU_CODES.get(index_code)
+    if not lg_code:
+        return None
+    try:
+        from akshare.stock_feature.stock_a_pe_and_pb import hash_code as _lg_hash
+        js = py_mini_racer.MiniRacer()
+        js.eval(_lg_hash)
+        token = js.call("hex", datetime.now().date().isoformat()).lower()
+        sess = requests.Session()
+        sess.headers.update({
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://legulegu.com/stockdata/sz50-ttm-lyr",
+        })
+        resp = None
+        for attempt in range(3):
+            try:
+                sess.get("https://legulegu.com/stockdata/sz50-ttm-lyr", timeout=20)
+                resp = sess.get(
+                    "https://legulegu.com/api/stockdata/index-basic-pe",
+                    params={"token": token, "indexCode": lg_code},
+                    timeout=30,
+                )
+                break
+            except Exception:
+                import time as _t
+                _t.sleep(2 * (attempt + 1))
+        if resp is None:
+            return None
+        rows = (resp.json() or {}).get("data") or []
+        if not rows:
+            return None
+        cutoff = pd.Timestamp.now() - pd.DateOffset(years=years)
+        out = []
+        for r in rows:
+            pe = r.get("ttmPe")
+            d = r.get("date")
+            if not pe or not d:
+                continue
+            ts = pd.to_datetime(d, errors="coerce")
+            if pd.isna(ts) or ts < cutoff:
+                continue
+            out.append({"date": ts.strftime("%Y-%m-%d"), "pe": float(pe), "close": r.get("close")})
+        out.sort(key=lambda x: x["date"])
+        return out if len(out) >= 20 else None
+    except Exception as e:
+        log.warning(f"  {index_code} legulegu fetch failed: {e}")
+        return None
+
+
 STALE_WARN_DAYS = 7
 
 
@@ -137,6 +207,11 @@ def build_report() -> dict:
         code = idx["code"]
         log.info(f"获取 {idx['name']} ({code})...")
         records = fetch_pe_data(code)
+        source = "csindex"
+        if not records and code.startswith("399"):
+            # 中证不提供深证指数，换乐咕（TTM PE 序列，自己算 5 年分位）
+            records = fetch_pe_data_legulegu(code)
+            source = "legulegu"
         stats = compute_percentile(records) if records else None
 
         if stats:
@@ -155,6 +230,7 @@ def build_report() -> dict:
                 "data_date": stats["date"],
                 "stale_days": stale_days,
                 "data_points": stats["data_points"],
+                "source": source,
                 "status": "stale" if warning else "ok",
                 "warning": warning,
             })
@@ -169,6 +245,7 @@ def build_report() -> dict:
                     **old,
                     "status": "stale",
                     "stale_days": stale_days,
+                    "source": old.get("source"),
                     "warning": f"本次抓取失败，沿用 {old.get('data_date')} 的旧数据"
                                + (f"（已过期 {stale_days} 天）" if stale_days else ""),
                 })
@@ -189,6 +266,7 @@ def build_report() -> dict:
                     "data_date": None,
                     "stale_days": None,
                     "data_points": 0,
+                    "source": None,
                     "status": "unsupported",
                     "warning": "中证指数接口不提供深证指数（399xxx）的 PE，本指数不参与温度判断",
                 })
@@ -209,6 +287,7 @@ def build_report() -> dict:
                     "data_date": None,
                     "stale_days": None,
                     "data_points": 0,
+                    "source": None,
                     "status": "fallback",
                     "warning": "抓取失败且无历史缓存，当前为硬编码参考值，不可用于决策",
                 })

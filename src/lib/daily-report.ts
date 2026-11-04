@@ -229,7 +229,10 @@ export async function generateDailyReport(force = false): Promise<{ content: str
     lines.push(`| PE | ${peVal != null && peVal > 0 ? fmt(peVal, 2) : "亏损，不适用"} |`);
     // 估值侧口径：卖出决策看这两行，不看浮盈百分比
     if (adv?.valuationPct != null) {
-      const basis = adv.valuationBasis === "PB" ? "PB 分位" : "估值分位";
+      const basis =
+        adv.valuationBasis === "PB" ? "PB 分位"
+        : adv.valuationBasis === "指数分位" ? "指数分位"
+        : "估值分位";
       lines.push(`| ${basis} | ${fmt(adv.valuationPct, 0)}%（${adv.valuationWindow ?? "10年"}） |`);
     }
     if (adv?.fairValue != null) {

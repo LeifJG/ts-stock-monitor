@@ -22,6 +22,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from dividend_data import batch_fetch as batch_fetch_dividends, get_dividend_yield as calc_dividend_yield
 
+from etf_index_map import etf_underlying_index, is_etf_code
 from net_utils import setup_proxy_env
 
 setup_proxy_env()
@@ -32,18 +33,30 @@ import urllib.parse
 
 # ─── 工具函数 ────────────────────────────────────────────────
 
+def to_tencent_symbol(code: str) -> str:
+    """代码 → 腾讯行情符号。
+
+    坑：ETF 5xxxxx 是**沪市**（588080=科创50ETF），原来按"非 6 开头就是深市"
+    拼成 sz588080，腾讯根本不认 → 该标的拿不到行情 → 分析静默用成本价当现价，
+    盈亏显示 0%，操作建议全部失效。
+    """
+    c = (code or "").strip()
+    if len(c) == 5:                      # 港股
+        return f"hk{c}"
+    if c.startswith(("6", "9", "5")):    # 沪市股票 / B股 / ETF与LOF
+        return f"sh{c}"
+    if c.startswith(("15", "16", "18")):  # 深市 ETF / LOF
+        return f"sz{c}"
+    if c.startswith("1"):                # 沪市可转债等 11xxxx
+        return f"sh{c}"
+    if c.startswith(("4", "8")):         # 北交所
+        return f"bj{c}"
+    return f"sz{c}"
+
+
 def fetch_tencent_quotes(codes: list) -> dict:
     """从腾讯API获取实时行情"""
-    items = []
-    for c in codes:
-        if len(c) == 5:
-            items.append(f"hk{c}")
-        elif c == "000001":
-            items.append(f"sh{c}")
-        elif c.startswith("6"):
-            items.append(f"sh{c}")
-        else:
-            items.append(f"sz{c}")
+    items = [to_tencent_symbol(c) for c in codes]
 
     url = f"https://qt.gtimg.cn/q={','.join(items)}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -254,6 +267,43 @@ def fmt_pct(v, spec: str = ".0f", dash: str = "—") -> str:
         return dash
 
 
+_INDEX_VAL_CACHE: dict | None = None
+
+
+def load_index_valuation_map() -> dict[str, dict]:
+    """读取 cache/index_valuations.json → {指数代码: 记录}。
+
+    用途：ETF 没有个股 PE 分位，用它跟踪的指数分位作为参考
+    （例如 588080 科创50ETF → 000688 科创50）。
+    """
+    global _INDEX_VAL_CACHE
+    if _INDEX_VAL_CACHE is not None:
+        return _INDEX_VAL_CACHE
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "cache", "index_valuations.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        _INDEX_VAL_CACHE = {i.get("code"): i for i in raw.get("indices", []) if i.get("code")}
+    except Exception:
+        _INDEX_VAL_CACHE = {}
+    return _INDEX_VAL_CACHE
+
+
+def etf_index_valuation(code: str) -> dict | None:
+    """ETF → 标的指数的估值分位（没有映射或指数无分位时返回 None）。"""
+    mapped = etf_underlying_index(code)
+    if not mapped:
+        return None
+    idx_code, label = mapped
+    rec = load_index_valuation_map().get(idx_code)
+    if not rec or rec.get("pct_5y") is None:
+        return None
+    return {"pct": float(rec["pct_5y"]), "indexCode": idx_code,
+            "indexName": rec.get("name") or label, "dataDate": rec.get("data_date"),
+            "pe": rec.get("pe")}
+
+
 def fmt_num(v, spec: str = ".2f", dash: str = "—") -> str:
     """None 安全的数字格式化（PB、合理估值这类可能缺失的值）。"""
     if v is None:
@@ -385,7 +435,11 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     buy_date = pos.get("buyDate") or pos.get("addedAt", "")
     dividends = pos.get("dividends", [])
 
-    current_price = quote.get("price", buy_price)
+    quote_price = quote.get("price")
+    # 行情缺失时必须显式标记：原来直接 fallback 到成本价，会算出"盈亏 0%"
+    # 并让所有补仓/止盈判断失效（588080 ETF 就踩过）
+    price_missing = not quote_price or quote_price <= 0
+    current_price = quote_price if not price_missing else buy_price
     div_yield = quote.get("dividendYield")
     pe = quote.get("pe")
     
@@ -518,6 +572,16 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         blend_pct = blend_all
         window_label = "全历史"
 
+    # ETF 没有个股 PE 分位 → 用标的指数分位兜底（588080 → 科创50）
+    index_val_note = None
+    if blend_pct is None:
+        iv = etf_index_valuation(code)
+        if iv is not None:
+            blend_pct = iv["pct"]
+            window_label = f"{iv['indexName']}指数5年"
+            index_val_note = (f"ETF 无个股分位，取标的指数 {iv['indexName']}({iv['indexCode']}) "
+                              f"5年分位 {iv['pct']:.0f}%（数据日 {iv.get('dataDate') or '未知'}）")
+
     # 5 年与 10 年档差异 ≥5pp 时在文案中补充短周期视角
     blend5_suffix = ""
     if blend10 is not None and blend5 is not None and abs(blend10 - blend5) >= 5:
@@ -535,6 +599,8 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     no_val_data = (not is_loss_stock) and blend_pct is None
     loss_no_margin = is_loss_stock and (pb_abs is None or pb_abs > 3)
     etf_hint = "（ETF 没有个股 PE 分位，应参考其标的指数分位）" if is_etf_code(code) else ""
+    if index_val_note and is_etf_code(code):
+        etf_hint = f"（{index_val_note}）"
 
     cost_advice = []
     if cost_diff_pct < -10:
@@ -828,8 +894,11 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         # ── 估值侧口径（卖出决策的依据，与成本收益率解耦）──
         "valuationPct": round(blend_pct, 1) if blend_pct is not None else None,
         "valuationWindow": window_label if blend_pct is not None else None,
+        "valuationSource": index_val_note,
+        "quoteMissing": price_missing,
         # 亏损股没有有效 PE，分位只看 PB → 前端标签要显示「PB 分位」避免误读成"便宜"
-        "valuationBasis": "PB" if (eff10 is None and eff5 is None) else "PE+PB",
+        "valuationBasis": ("指数分位" if index_val_note
+                           else ("PB" if (eff10 is None and eff5 is None) else "PE+PB")),
         "fairValue": fair_value,
         "fairValueBasis": fair_basis,
         "fairValuePremiumPct": fair_premium_pct,
