@@ -10,7 +10,7 @@ valuation_data.py — 估值分位数据模块
     python3 scripts/valuation_data.py                # 全量（从 dividend_yields 取默认列表）
     python3 scripts/valuation_data.py 600036 000858  # 指定代码
 """
-import os, json, sys, math
+import os, json, sys, math, time
 from pathlib import Path
 
 # 注意：本脚本禁用代理直连。百度估值接口(finance.baidu.com)经 Clash 代理会
