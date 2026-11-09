@@ -583,9 +583,13 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                               f"5年分位 {iv['pct']:.0f}%（数据日 {iv.get('dataDate') or '未知'}）")
 
     # 5 年与 10 年档差异 ≥5pp 时在文案中补充短周期视角
+    # 铁律：结论词必须紧跟主口径（10 年），短周期差异只能放括号里并标明方向。
+    # 曾因把 suffix 拼在结论词前面，产生「5年分位 80%，偏低区间」这种自相矛盾的文案。
     blend5_suffix = ""
     if blend10 is not None and blend5 is not None and abs(blend10 - blend5) >= 5:
-        blend5_suffix = f"；5年分位 {blend5:.0f}%"
+        _gap = blend5 - blend10
+        _trend = "短周期偏高" if _gap > 0 else "短周期偏低"
+        blend5_suffix = f"（5年分位 {blend5:.0f}%，{_trend}）"
 
     # 合理估值锚（历史倍数中位数反推，纯数据、不做盈利预测）——卖出侧的第二重闸门
     fair_value, fair_basis = estimate_fair_value(val, current_price, pe)
@@ -768,25 +772,25 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         if blend_pct < 20:
             val_advice.append({
                 "action": "估值历史低位",
-                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，安全边际厚",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}），安全边际厚{blend5_suffix}",
                 "priority": "high",
             })
         elif blend_pct < 50:
             val_advice.append({
                 "action": "估值偏低",
-                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，偏低区间",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}），偏低区间{blend5_suffix}",
                 "priority": "medium",
             })
         elif blend_pct < 80:
             val_advice.append({
                 "action": "估值中枢",
-                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，合理区间",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}），合理区间{blend5_suffix}",
                 "priority": "info",
             })
         else:
             val_advice.append({
                 "action": "估值高位",
-                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}）{blend5_suffix}，注意回撤风险",
+                "reason": f"估值分位 {fmt_pct(blend_pct)}%（{window_label}），注意回撤风险{blend5_suffix}",
                 "priority": "medium",
             })
     elif pe:
