@@ -290,6 +290,98 @@ def load_index_valuation_map() -> dict[str, dict]:
     return _INDEX_VAL_CACHE
 
 
+# ============================================================
+# 质量维度：护城河评级 + ROIC 跑赢资金成本年数 + 股东总回报
+# ------------------------------------------------------------
+# 为什么不用单一阈值：
+#   · 长江电力 ROIC 只有 5.1%（水电资本密集，天生低），但护城河评级是「宽」
+#   · 招商银行 ROIC 干脆没有数据（银行口径不适用，用 ROE 更合适）
+#   · 阿里 ROIC 6.3%、5 年只有 1 年跑赢资金成本、股东回报 1.14%、毛利 5 年 -17.4pp
+# 单看 ROIC 会把长电误判成烂公司、把招行判成没数据；
+# 单看护城河评分又会漏掉「便宜但资本回报烂」的票。所以做三维投票，两项差才算不合格。
+# 数据来源：moat_cache.json（评分/盈利持续性/股东回报）+ financials_cache.json（ROIC）
+# ============================================================
+
+_QUALITY_CACHE: tuple[dict, dict] | None = None
+
+
+def _load_quality_caches() -> tuple[dict, dict]:
+    """懒加载护城河与财务缓存，避免每只持仓重复读盘"""
+    global _QUALITY_CACHE
+    if _QUALITY_CACHE is None:
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        moat, fin = {}, {}
+        try:
+            with open(os.path.join(base, "moat_cache.json"), encoding="utf-8") as f:
+                moat = json.load(f)
+        except Exception:
+            pass
+        try:
+            with open(os.path.join(base, "financials_cache.json"), encoding="utf-8") as f:
+                fin = json.load(f)
+        except Exception:
+            pass
+        _QUALITY_CACHE = (moat, fin)
+    return _QUALITY_CACHE
+
+
+def evaluate_quality(stock_code: str) -> dict | None:
+    """评估个股质量。数据全部缺失时返回 None —— 缺数据不编造，也不给中性结论。"""
+    moat_map, fin_map = _load_quality_caches()
+    moat = moat_map.get(stock_code) or {}
+    fin = fin_map.get(stock_code) or {}
+    if not moat and not fin:
+        return None
+
+    dims = moat.get("dims") or {}
+    stay = dims.get("盈利持续性") or {}
+    ret = dims.get("股东回报") or {}
+    pricing = dims.get("定价权") or {}
+
+    rating = moat.get("rating")               # wide / narrow / none
+    score = moat.get("score")
+    years_above = stay.get("years_above_wacc")
+    roic = fin.get("roic")
+    if roic is None:
+        roic = stay.get("roic_avg5")
+    share_yield = ret.get("shareholderYield")
+    gm_trend = pricing.get("gm_trend")
+
+    # 三维投票：每维 好(+1) / 中(0) / 差(-1)
+    votes = []
+    votes.append(1 if rating == "wide" else (-1 if rating == "none" else 0))
+    if years_above is not None:
+        votes.append(1 if years_above >= 4 else (-1 if years_above <= 1 else 0))
+    if share_yield is not None:
+        votes.append(1 if share_yield >= 3 else (-1 if share_yield < 1 else 0))
+
+    bad, good = votes.count(-1), votes.count(1)
+    grade = "poor" if bad >= 2 else ("good" if good >= 2 else "fair")
+
+    # 警示只在质量确实有问题时给，避免刷屏
+    warnings = []
+    if years_above is not None and years_above <= 1:
+        warnings.append(f"ROIC 近 5 年只有 {years_above} 年跑赢资金成本")
+    if share_yield is not None and share_yield < 2:
+        warnings.append(f"股东总回报仅 {share_yield:.2f}%，非收息资产")
+    if gm_trend is not None and gm_trend <= -10:
+        warnings.append(f"毛利率 5 年下行 {abs(gm_trend):.1f}pp")
+    if rating == "none":
+        warnings.append(f"护城河评级「{moat.get('ratingLabel') or '无'}」")
+
+    return {
+        "grade": grade,                  # good / fair / poor
+        "rating": rating,
+        "ratingLabel": moat.get("ratingLabel"),
+        "score": score,
+        "roic": roic,
+        "yearsAboveWacc": years_above,
+        "shareholderYield": share_yield,
+        "gmTrend": gm_trend,
+        "warnings": warnings,
+    }
+
+
 def etf_index_valuation(code: str) -> dict | None:
     """ETF → 标的指数的估值分位（没有映射或指数无分位时返回 None）。"""
     mapped = etf_underlying_index(code)
@@ -450,6 +542,9 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     val_pe = (val or {}).get("pe_ttm")
     pe = val_pe if (val_pe is not None and val_pe > 0) else quote.get("pe")
     
+    # 质量维度（护城河/ROIC/股东回报），数据缺失返回 None，不编造
+    quality = evaluate_quality(code)
+
     # 如果 buy_price 或 current_price 为 0，无法计算，跳过此持仓
     if buy_price <= 0 or current_price <= 0:
         return None
@@ -636,11 +731,19 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     elif blend_pct is not None and blend_pct < 50:
         # 估值确实进到偏低区，再看安全边际 / 补仓额度 / 加仓间距
         if fair_premium_pct is not None and fair_premium_pct > 0:
+            # 质量不合格要一并说清：否则用户会以为「等跌到位就该重仓」，
+            # 而质量差的票跌到位也只值得小仓位试探。
+            q = quality or {}
+            q_warn = ""
+            if q.get("grade") == "poor":
+                why = "、".join([w for w in (q.get("warnings") or []) if "护城河评级" not in w])
+                if why:
+                    q_warn = f"；且{why}，即使跌到位也只宜小仓位试探"
             cost_advice.append({
                 "action": "暂缓补仓",
                 "reason": (f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，"
                            f"但现价仍高于合理估值 {fair_premium_pct:.1f}%（{fmt_num(fair_value, '.2f')}）"
-                           "——分位低不等于价格便宜，等跌进安全边际再补"),
+                           f"——分位低不等于价格便宜，等跌进安全边际再补{q_warn}"),
                 "priority": "medium",
             })
         elif used_pct >= 100:
@@ -659,21 +762,44 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
             margin_note = ""
             if fair_premium_pct is not None and fair_premium_pct <= 0:
                 margin_note = f"，现价低于合理估值 {abs(fair_premium_pct):.1f}%（{fmt_num(fair_value, '.2f')}）"
-            cost_advice.append({
-                "action": "补仓",
-                "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 处于偏低区间{margin_note}，估值驱动可补",
-                "priority": "high",
-            })
-            # 建议补仓量：单批基准仓位的 30%，受剩余额度封顶，取整百
+            q = quality or {}
+            q_grade = q.get("grade")
+            # ── 质量闸门：便宜 ≠ 该买 ──
+            # 「分位低 + 跌进安全边际」只说明价格合适，不说明公司值得持有。
+            # 质量不合格（三维投票两项差）时降级为 medium 并把单批额度减半，
+            # 同时必须写明哪一项不合格，避免用户看到「可补」就动手。
+            if q_grade == "poor":
+                why = "、".join(q.get("warnings") or []) or "护城河与资本回报均不达标"
+                cost_advice.append({
+                    "action": "补仓（质量不合格·建议减半）",
+                    "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 处于偏低区间{margin_note}，但{why}——便宜但质量不合格，只适合小仓位试探，不建议重仓",
+                    "priority": "medium",
+                })
+            else:
+                q_note = ""
+                if q_grade == "good":
+                    label = q.get("ratingLabel") or ""
+                    sc = q.get("score")
+                    q_note = f"，质量{label}" + (f"（{sc:.0f} 分）" if sc is not None else "")
+                    sy = q.get("shareholderYield")
+                    if sy is not None:
+                        q_note += f"、股东总回报 {sy:.2f}%"
+                cost_advice.append({
+                    "action": "补仓",
+                    "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 处于偏低区间{margin_note}{q_note}，估值驱动可补",
+                    "priority": "high",
+                })
+            # 建议补仓量：质量合格给基准仓位的 30%，不合格减半到 15%，受剩余额度封顶，取整百
             if total_cost > 0 and base_shares > 0:
+                frac = 0.15 if q_grade == "poor" else 0.3
                 quota_shares = int(base_shares * remaining_pct / 100)
-                add_shares = min(round(base_shares * 0.3), quota_shares)
+                add_shares = min(round(base_shares * frac), quota_shares)
                 add_shares = max(add_shares // 100 * 100, 0)
                 if add_shares >= 100:
                     left_after = max(remaining_pct - (add_shares / base_shares * 100), 0)
                     cost_advice.append({
                         "action": f"补 {add_shares} 股",
-                        "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 30%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
+                        "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 {frac*100:.0f}%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
                         "priority": "medium",
                     })
     # 分位 >=50（中性或偏贵）时不给补仓建议：既不便宜也没到该动手的位置，沉默比提醒更有用
@@ -883,6 +1009,7 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         "fairValue": fair_value,
         "fairValueBasis": fair_basis,
         "fairValuePremiumPct": fair_premium_pct,
+        "quality": quality,
         "costProfitPct": round(cost_diff_pct, 2),
         "gridVolatility": round(grid_volatility, 1),
         "gridStep": grid_step,
