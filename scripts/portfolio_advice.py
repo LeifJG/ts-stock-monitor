@@ -241,7 +241,12 @@ def estimate_fair_value(val: dict | None, price: float, pe: float | None) -> tup
             fv, basis = price * ratio, "PB 5年中位数"
     if fv is None:
         return None, None
+    # 钳制只是安全阀，但必须留痕：长鑫科技真实比值 2.40 倍被钳到 2.0，
+    # 用户看到「现价低于合理估值 50%」会以为是精确计算值，实际是边界值。
+    fv_raw = fv
     fv = min(max(fv, price * 0.5), price * 2.0)
+    if abs(fv - fv_raw) > 0.01:
+        basis = f"{basis}·实际 {fv_raw / price:.2f} 倍超出可信范围，显示为边界值"
     return round(fv, 2), basis
 
 
@@ -660,6 +665,8 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     def _blend(e, p):
         return (e * 0.6 + p * 0.4) if (e is not None and p is not None) else (e if e is not None else p)
 
+    # 上市不足 1 年的新股标记（下面全历史兜底会置 True，补仓分支据此给专门的文案）
+    history_too_short = False
     blend5 = _blend(eff5, pb5)
     blend10 = _blend(eff10, pb10)
     blend_pct = blend10 if blend10 is not None else blend5
@@ -671,8 +678,15 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     blend_all = (eff_pe_all * 0.6 + pb_pct_all * 0.4) if (eff_pe_all is not None and pb_pct_all is not None) \
         else (eff_pe_all if eff_pe_all is not None else pb_pct_all)
     if blend_pct is None and blend_all is not None:
-        blend_pct = blend_all
-        window_label = "全历史"
+        hy = (val or {}).get("history_years")
+        # 上市不足 1 年的新股：所谓「全历史分位」只是几个月内的位置（长鑫科技 688825
+        # 只有 73 个交易日），拿它当估值锚等于把噪声当信号。这种情况宁可不给分位，
+        # 让下游走「估值数据缺失」分支，也不要输出一个看起来精确的数字。
+        if hy is not None and hy < 1.0:
+            history_too_short = True
+        else:
+            blend_pct = blend_all
+            window_label = f"全历史{hy:.1f}年" if hy else "全历史"
 
     # ETF 没有个股 PE 分位 → 用标的指数分位兜底（588080 → 科创50）
     index_val_note = None
@@ -723,9 +737,17 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
             "priority": "high",
         })
     elif no_val_data:
+        hy = (val or {}).get("history_years")
+        if history_too_short or (hy is not None and hy < 1.0):
+            # 新股：不是「没抓数据」，而是抓到了但没有足够历史 —— 两者结论不同
+            why = (f"该标的上市仅 {hy:.1f} 年（{int((val or {}).get('history_points') or 0)} 个交易日），"
+                   "历史估值样本撑不起有意义的分位 —— 用几个月的数据算「十年分位」会得出假信号，"
+                   "所以这里不给数字；只宜按仓位纪律和基本面判断，别当估值便宜")
+        else:
+            why = f"该标的没有估值分位数据，无法判断贵不贵{etf_hint}"
         cost_advice.append({
             "action": "估值数据缺失·按纪律判断",
-            "reason": f"该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值再决定，或只按补仓额度/间隔纪律小幅试探",
+            "reason": why + "；先补齐估值再决定，或只按补仓额度/间隔纪律小幅试探",
             "priority": "medium",
         })
     elif blend_pct is not None and blend_pct < 50:
@@ -802,7 +824,18 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                         "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 {frac*100:.0f}%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
                         "priority": "medium",
                     })
-    # 分位 >=50（中性或偏贵）时不给补仓建议：既不便宜也没到该动手的位置，沉默比提醒更有用
+    elif quality and (quality.get("grade") == "poor") and blend_pct is not None:
+        # 分位中性但质量不合格：沉默会让用户以为「没问题」。
+        # 这类票（如阿里：10年样本只有 6.96 年，真实 5 年分位 54.6%、无护城河、ROIC 跑输）
+        # 的正确结论不是「等跌」，而是「连等都不值得重仓」，要明说。
+        why = "、".join([w for w in (quality.get("warnings") or []) if "护城河评级" not in w]) or "质量不合格"
+        prem = (f"，现价还高于合理估值 {fair_premium_pct:.1f}%" if (fair_premium_pct is not None and fair_premium_pct > 0) else "")
+        cost_advice.append({
+            "action": "估值中性·质量不合格",
+            "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 属中间位置，谈不上便宜{prem}；且{why}——不建议加仓",
+            "priority": "medium",
+        })
+    # 分位 >=50（中性或偏贵）且质量不差时不给补仓建议：既不便宜也没到该动手的位置，沉默比提醒更有用
 
     # ── 卖出侧：估值驱动，与买入侧对称（规则表见 evaluate_sell_advice）──
     # 成本收益率在这里只作「确认」与仓位参考，不再单独触发减仓。

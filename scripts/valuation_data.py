@@ -18,7 +18,12 @@ from pathlib import Path
 for _k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
     os.environ.pop(_k, None)
 
-import akshare as ak
+try:
+    import akshare as ak
+except ImportError:      # 测试环境（backend/.venv）不装 akshare：
+    ak = None            # 纯计算函数（_pct_result 等）仍需可导入可测试，
+                         # 只有真正抓数据的 fetch_* 依赖它，调用时才报错。
+
 import numpy as np
 import pandas as pd
 
@@ -51,7 +56,16 @@ def is_hk(code: str) -> bool:
 
 
 def _pct_result(code: str, dates, pe_vals, pb_vals, cur_price=None) -> dict | None:
-    """PE/PB 历史序列 → 统一的分位/中位/极值/走势结构（A股与港股共用）"""
+    """PE/PB 历史序列 → 统一的分位/中位/极值/走势结构（A股与港股共用）
+
+    覆盖度检查（关键）：窗口分位必须确认样本真的覆盖了该窗口，否则会输出「精确的假数字」。
+    事故：长鑫科技 688825 上市仅 3.5 个月（72 个数据点），1y/3y/5y/10y 四个窗口
+    拿到的都是同一批数据 → 四个分位全部等于 7.6%，看起来像「十年最低」，实际只是
+    3 个月内的位置；pe_median_5y 更是用 72 个泡沫期数据点冒充「5 年中位数」
+    （46.36 倍），反推出的「合理估值」比现价高一倍，直接变成买入信号。
+    因此：窗口覆盖不足 80% → 该窗口分位返回 None（下游显示「数据缺失」，
+    而不是一个假数字）；覆盖不足 4 年 → 不给「5 年中位数」。
+    """
     pe = pd.Series(pe_vals, index=pd.to_datetime(dates)).dropna()
     pb = pd.Series(pb_vals, index=pd.to_datetime(dates)).dropna()
     if pe.empty and pb.empty:
@@ -59,34 +73,68 @@ def _pct_result(code: str, dates, pe_vals, pb_vals, cur_price=None) -> dict | No
 
     cur_pe = float(pe.iloc[-1]) if not pe.empty else float("nan")
     cur_pb = float(pb.iloc[-1]) if not pb.empty else float("nan")
+    main_idx = pe.index if not pe.empty else pb.index
+
+    # 真实序列跨度（不是 history 字段那 250 条展示截断）
+    span_years = round((main_idx[-1] - main_idx[0]).days / 365.25, 2) if len(main_idx) > 1 else 0.0
+    WINDOW_MIN_COVERAGE = 0.8   # 窗口覆盖到 80% 才算有效（容忍节假日/停牌缺口）
+    MEDIAN_MIN_YEARS = 4.0      # 叫「5 年中位数」至少要有 4 年数据
 
     result = {
         "code": code,
         "price": round(cur_price, 2) if cur_price is not None else None,
         "pe_ttm": round(cur_pe, 2) if not math.isnan(cur_pe) else None,
         "pb": round(cur_pb, 2) if not math.isnan(cur_pb) else None,
-        "pe_median_5y": round(float(pe[-250 * 5:].median()), 2) if not pe.empty else None,
-        "pb_median_5y": round(float(pb[-250 * 5:].median()), 2) if not pb.empty else None,
-        "updated_at": str((pe.index[-1] if not pe.empty else pb.index[-1]).date()),
+        "updated_at": str(main_idx[-1].date()),
+        # 样本元信息：让下游能判断分位/中位数到底可不可信
+        "history_years": span_years,
+        "history_start": str(main_idx[0].date()),
+        "history_points": int(len(main_idx)),
     }
+
+    if span_years >= MEDIAN_MIN_YEARS:
+        result["pe_median_5y"] = round(float(pe[-250 * 5:].median()), 2) if not pe.empty else None
+        result["pb_median_5y"] = round(float(pb[-250 * 5:].median()), 2) if not pb.empty else None
+    else:
+        # 不足 4 年：不叫 5 年中位数。宁可不给，也不拿 3 个月的中位数反推合理估值
+        result["pe_median_5y"] = None
+        result["pb_median_5y"] = None
 
     for years in (1, 3, 5, 10):
         label = f"{years}y"
-        pe_w = recent_window(pe, years)
-        pb_w = recent_window(pb, years)
-        result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
-        result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
+        if span_years >= years * WINDOW_MIN_COVERAGE:
+            pe_w = recent_window(pe, years)
+            pb_w = recent_window(pb, years)
+            result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
+            result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
+        else:
+            # 样本撑不起这个窗口 → 不给数字，避免四个窗口退化成同一个值还标成「N年分位」
+            result[f"pe_pct_{label}"] = None
+            result[f"pb_pct_{label}"] = None
 
-    # 全历史分位（数据源窗口：百度股市通最长近十年/上市以来）
+    # 全历史分位（A股=2018起全部；港股=近十年/上市以来）。
+    # 短线窗口全部失效时它是唯一参考，但必须配合 history_years 一起读——
+    # 「全历史」对新股可能就是三个月。
     result["pe_pct_all"] = percentile_rank(pe.to_numpy(), cur_pe)
     result["pb_pct_all"] = percentile_rank(pb.to_numpy(), cur_pb)
 
-    pe5 = pe[-250 * 5:]
-    pb5 = pb[-250 * 5:]
-    result["pe_min_5y"] = round(float(pe5.min()), 2) if not pe5.empty else None
-    result["pe_max_5y"] = round(float(pe5.max()), 2) if not pe5.empty else None
-    result["pb_min_5y"] = round(float(pb5.min()), 2) if not pb5.empty else None
-    result["pb_max_5y"] = round(float(pb5.max()), 2) if not pb5.empty else None
+    if span_years >= MEDIAN_MIN_YEARS:
+        pe5 = pe[-250 * 5:]
+        pb5 = pb[-250 * 5:]
+        result["pe_min_5y"] = round(float(pe5.min()), 2) if not pe5.empty else None
+        result["pe_max_5y"] = round(float(pe5.max()), 2) if not pe5.empty else None
+        result["pb_min_5y"] = round(float(pb5.min()), 2) if not pb5.empty else None
+        result["pb_max_5y"] = round(float(pb5.max()), 2) if not pb5.empty else None
+    else:
+        # 5 年极值同样要求 5 年覆盖；改用 all 字段，字段名就说明它实际是多少年的极值
+        result["pe_min_5y"] = None
+        result["pe_max_5y"] = None
+        result["pb_min_5y"] = None
+        result["pb_max_5y"] = None
+        result["pe_min_all"] = round(float(pe.min()), 2) if not pe.empty else None
+        result["pe_max_all"] = round(float(pe.max()), 2) if not pe.empty else None
+        result["pb_min_all"] = round(float(pb.min()), 2) if not pb.empty else None
+        result["pb_max_all"] = round(float(pb.max()), 2) if not pb.empty else None
 
     hist_pe = pe[-250:]
     hist_pb = pb[-250:]
@@ -101,6 +149,8 @@ def _pct_result(code: str, dates, pe_vals, pb_vals, cur_price=None) -> dict | No
 
 def fetch_one_hk(code: str) -> dict | None:
     """港股估值分位：百度股市通历史 PE(TTM)/市净率（近五年，自算分位）"""
+    if ak is None:
+        raise RuntimeError("akshare 未安装，无法抓取港股估值数据")
     import time
 
     def _fetch(indicator: str):
@@ -152,6 +202,8 @@ def fetch_one_hk(code: str) -> dict | None:
 
 def fetch_one(code: str) -> dict | None:
     """获取单只股票的历史估值 + 分位（A股走东财，港股走百度）"""
+    if ak is None:
+        raise RuntimeError("akshare 未安装，无法抓取估值数据（分位计算函数不受影响）")
     if is_hk(code):
         return fetch_one_hk(code)
     # 东财接口无内置重试，DNS/网络抖动一次就废（美的曾因此 27 天未更新），显式重试+退避
@@ -183,49 +235,9 @@ def fetch_one(code: str) -> dict | None:
         cur_pb = float(pb.iloc[-1])
         cur_price = float(price.iloc[-1])
 
-        result = {
-            "code": code,
-            "price": round(cur_price, 2),
-            "pe_ttm": round(cur_pe, 2),
-            "pb": round(cur_pb, 2),
-            "pe_median_5y": round(float(pe[-250*5:].median()), 2),
-            "pb_median_5y": round(float(pb[-250*5:].median()), 2),
-            "updated_at": str(pe.index[-1].date()),
-        }
-
-        # 各窗口分位（1年/3年/5年/10年/全部）
-        # 数据源（东财历史估值）仅覆盖 2018 年起 ≈ 8.7 年，「全部」即该窗口
-        for years in (1, 3, 5, 10):
-            label = f"{years}y"
-            pe_w = recent_window(pe, years)
-            pb_w = recent_window(pb, years)
-            result[f"pe_pct_{label}"] = percentile_rank(pe_w.to_numpy(), cur_pe)
-            result[f"pb_pct_{label}"] = percentile_rank(pb_w.to_numpy(), cur_pb)
-        # 全历史分位（A股=2018起全部；港股=近十年/上市以来），作为 5 年窗口的补充视角
-        result["pe_pct_all"] = percentile_rank(pe.to_numpy(), cur_pe)
-        result["pb_pct_all"] = percentile_rank(pb.to_numpy(), cur_pb)
-
-        # 5年极值
-        pe5 = pe[-250*5:]
-        pb5 = pb[-250*5:]
-        result["pe_min_5y"] = round(float(pe5.min()), 2)
-        result["pe_max_5y"] = round(float(pe5.max()), 2)
-        result["pb_min_5y"] = round(float(pb5.min()), 2)
-        result["pb_max_5y"] = round(float(pb5.max()), 2)
-
-        # 近 250 个交易日的 PE/PB 走势（用于前端画迷你图）
-        hist_pe = pe[-250:]
-        hist_pb = pb[-250:]
-        result["history"] = [
-            {
-                "date": str(d.date()),
-                "pe": round(float(p), 2) if not math.isnan(p) else None,
-                "pb": round(float(b), 2) if not math.isnan(b) else None,
-            }
-            for d, p, b in zip(hist_pe.index, hist_pe.to_numpy(), hist_pb.to_numpy())
-        ]
-
-        return result
+        # 与港股走同一个公共函数：分位/中位数/极值的口径逻辑只在这里存在一份，
+        # 避免两处实现各自打补丁（原来 A 股这段是完整复制品，覆盖度检查会漏改一边）
+        return _pct_result(code, pe.index, pe.to_numpy(), pb.to_numpy(), cur_price)
     except Exception as e:
         print(f"[warn] {code}: {e}", file=sys.stderr)
         return None

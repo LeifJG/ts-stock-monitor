@@ -103,6 +103,17 @@ export function computeTradeAdvice(
   // 亏损股 PE 无效（负值），此时 PE 分位不可用 → 回落到 PB 分位
   const effPePct = pe != null && pe > 0 ? pePct10y : null;
 
+  // 分位窗口标签必须跟着实际用到的窗口走：
+  // 10 年样本不足时 valuation_data.py 会把 pe_pct_10y/pb_pct_10y 置 None
+  // （如阿里只有 6.96 年、长鑫只有 0.3 年），上面的 ?? 链会退到全历史/5 年，
+  // 若标签仍写「10年分位」就是把 5 年的数字冒充 10 年。
+  const pctWindowLabel =
+    valuation?.pe_pct_10y != null || valuation?.pb_pct_10y != null
+      ? "10年"
+      : valuation?.pe_pct_all != null || valuation?.pb_pct_all != null
+        ? "全历史"
+        : "5年";
+
   // 综合评分（用现有指标近似计算，避免循环依赖）
   const compositeScore = estimateCompositeScore(stock);
 
@@ -175,10 +186,10 @@ export function computeTradeAdvice(
   if (pctForDecision != null) {
     const label =
       effPePct != null && pbPct10y != null
-        ? `PE/PB 分位融合(10年)`
+        ? `PE/PB 分位融合(${pctWindowLabel})`
         : effPePct != null
-          ? "PE 10年分位"
-          : "PB 10年分位";
+          ? `PE ${pctWindowLabel}分位`
+          : `PB ${pctWindowLabel}分位`;
     if (pctForDecision < 15) { valuationScore = 90; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 处于历史低位区间`); }
     else if (pctForDecision < 35) { valuationScore = 75; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 偏低`); }
     else if (pctForDecision < 65) { valuationScore = 50; reasons.push(`${label} ${pctForDecision.toFixed(0)}% — 估值中枢`); }
@@ -186,7 +197,7 @@ export function computeTradeAdvice(
     else { valuationScore = 15; risks.push(`${label} ${pctForDecision.toFixed(0)}% — 历史高位，追高风险大`); }
   }
   if (pe != null && pe < 0 && pbPct10y != null) {
-    reasons.push(`亏损股 PE 无效，已按 PB 10年分位 ${pbPct10y.toFixed(0)}% 评估`);
+    reasons.push(`亏损股 PE 无效，已按 PB ${pctWindowLabel}分位 ${pbPct10y.toFixed(0)}% 评估`);
   }
 
   // 2. 安全边际
