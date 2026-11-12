@@ -441,7 +441,14 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     price_missing = not quote_price or quote_price <= 0
     current_price = quote_price if not price_missing else buy_price
     div_yield = quote.get("dividendYield")
-    pe = quote.get("pe")
+    # PE 口径必须与 pe_median_5y 同源，否则合理估值会算反：
+    # estimate_fair_value 用 price × (PE中位数 / 当前PE)，中位数来自估值缓存，
+    # 若当前 PE 取自行情源（港股腾讯常给 Non-GAAP，剔除投资损益/减值），
+    # 两个口径混除会得出相反结论。实测阿里：行情 PE 16.2 vs 缓存 PE 23.95，
+    # 同一只票算出「便宜 28.8%」和「贵 5.3%」两个相反答案。
+    # 因此优先用估值缓存的 pe_ttm，无缓存时才对行情 PE 兜底。
+    val_pe = (val or {}).get("pe_ttm")
+    pe = val_pe if (val_pe is not None and val_pe > 0) else quote.get("pe")
     
     # 如果 buy_price 或 current_price 为 0，无法计算，跳过此持仓
     if buy_price <= 0 or current_price <= 0:
@@ -607,104 +614,74 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
         etf_hint = f"（{index_val_note}）"
 
     cost_advice = []
-    if cost_diff_pct < -10:
-        # 估值闸门：回撤≠便宜，先看分位再谈补仓
-        if loss_no_margin:
-            cost_advice.append({
-                "action": "不建议补仓",
-                "reason": (f"低于成本 {abs(cost_diff_pct):.1f}%，但"
-                           + (f"亏损股 PB {fmt_num(pb_abs, '.2f')} 倍仍高" if pb_abs is not None else "亏损股且 PB 数据缺失")
-                           + "，无盈利无股息缺安全垫，摊低成本无意义"),
-                "priority": "high",
-            })
-        elif no_val_data:
-            cost_advice.append({
-                "action": "估值数据缺失·按纪律判断",
-                "reason": f"低于成本 {abs(cost_diff_pct):.1f}%，但该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值再决定，或只按补仓额度/间隔纪律小幅试探",
-                "priority": "medium",
-            })
-        elif blend_pct is not None and blend_pct > 80:
-            cost_advice.append({
-                "action": "不建议补仓",
-                "reason": f"虽低于成本 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{fmt_pct(blend_pct)}% 仍处历史高位，回撤未消化完，补仓=接飞刀",
-                "priority": "high",
-            })
-        elif blend_pct is not None and blend_pct > 50:
-            cost_advice.append({
-                "action": "暂缓补仓",
-                "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 但估值分位（{window_label}）{fmt_pct(blend_pct)}% 中性偏高，等分位 <50% 或基本面确认再补",
-                "priority": "medium",
-            })
-        else:
-            # ── 估值过关，再看补仓额度和间距 ──
-            if used_pct >= 100:
-                cost_advice.append({
-                    "action": "补仓额度已用完",
-                    "reason": f"低于成本 {abs(cost_diff_pct):.1f}% 且估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，但已补 {used_pct:.0f}%（基准 {base_shares} 股 → 现持 {shares} 股）达上限，纪律优先不再加",
-                    "priority": "medium",
-                })
-            elif not spacing_ok:
-                cost_advice.append({
-                    "action": "补仓间隔未到",
-                    "reason": f"估值已到补仓区（{window_label}分位 {fmt_pct(blend_pct)}%），但{spacing_reason}，避免密集补仓",
-                    "priority": "medium",
-                })
-            else:
-                cost_advice.append({
-                    "action": "补仓",
-                    "reason": f"现价低于成本价 {abs(cost_diff_pct):.1f}%，且估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，适合补仓摊低成本",
-                    "priority": "high",
-                })
-                # 建议补仓量：单批基准仓位的 30%，受剩余额度封顶，取整百
-                if total_cost > 0 and base_shares > 0:
-                    quota_shares = int(base_shares * remaining_pct / 100)
-                    add_shares = min(round(base_shares * 0.3), quota_shares)
-                    add_shares = max(add_shares // 100 * 100, 0)
-                    if add_shares >= 100:
-                        left_after = max(remaining_pct - (add_shares / base_shares * 100), 0)
-                        cost_advice.append({
-                            "action": f"补 {add_shares} 股",
-                            "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 30%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
-                            "priority": "medium",
-                        })
-    elif cost_diff_pct < -5:
-        if blend_pct is not None and blend_pct > 50:
+    # ── 补仓闸门 = 估值驱动，成本价不参与触发 ──
+    # 铁律：成本价是沉没成本，只用于展示收益率，绝不做买入决策的主驱动。
+    # 旧实现以 cost_diff_pct < -10 作入口，后果是双向失真：
+    #   ① 估值分位 5% 的票，只要现价高于成本，永不提示补仓；
+    #   ② 跌破成本 10% 的票，哪怕分位 90%，也先被拉进补仓评估（再靠估值事后否决）。
+    # 现在改为：分位决定"能不能补"，安全边际/额度/间距决定"补多少"。
+    if loss_no_margin:
+        cost_advice.append({
+            "action": "不建议补仓",
+            "reason": (f"亏损股 PB {fmt_num(pb_abs, '.2f')} 倍仍高" if pb_abs is not None else "亏损股且 PB 数据缺失")
+                      + "，无盈利无股息缺安全垫，摊低成本无意义",
+            "priority": "high",
+        })
+    elif no_val_data:
+        cost_advice.append({
+            "action": "估值数据缺失·按纪律判断",
+            "reason": f"该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值再决定，或只按补仓额度/间隔纪律小幅试探",
+            "priority": "medium",
+        })
+    elif blend_pct is not None and blend_pct < 50:
+        # 估值确实进到偏低区，再看安全边际 / 补仓额度 / 加仓间距
+        if fair_premium_pct is not None and fair_premium_pct > 0:
             cost_advice.append({
                 "action": "暂缓补仓",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏高，暂不补",
+                "reason": (f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，"
+                           f"但现价仍高于合理估值 {fair_premium_pct:.1f}%（{fmt_num(fair_value, '.2f')}）"
+                           "——分位低不等于价格便宜，等跌进安全边际再补"),
                 "priority": "medium",
             })
         elif used_pct >= 100:
             cost_advice.append({
                 "action": "补仓额度已用完",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但已补 {used_pct:.0f}% 达上限，小回撤不值得动用纪律额度",
+                "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，但已补 {used_pct:.0f}%（基准 {base_shares} 股 → 现持 {shares} 股）达上限，纪律优先不再加",
                 "priority": "medium",
             })
         elif not spacing_ok:
             cost_advice.append({
                 "action": "补仓间隔未到",
-                "reason": spacing_reason,
-                "priority": "medium",
-            })
-        elif no_val_data:
-            # 没有估值分位（新标的/ETF/缓存缺失）时，不能假装"估值合理"
-            cost_advice.append({
-                "action": "估值数据缺失·仅按纪律判断",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，但该标的没有估值分位数据，无法判断贵不贵{etf_hint}；先补齐估值数据再决定，或按补仓额度/间隔纪律小幅试探",
+                "reason": f"估值已到补仓区（{window_label}分位 {fmt_pct(blend_pct)}%），但{spacing_reason}，避免密集补仓",
                 "priority": "medium",
             })
         else:
+            margin_note = ""
+            if fair_premium_pct is not None and fair_premium_pct <= 0:
+                margin_note = f"，现价低于合理估值 {abs(fair_premium_pct):.1f}%（{fmt_num(fair_value, '.2f')}）"
             cost_advice.append({
-                "action": "轻仓补入",
-                "reason": f"小幅回撤 {abs(cost_diff_pct):.1f}%，估值分位（{window_label}）{fmt_pct(blend_pct)}% 合理，可小批量补仓",
-                "priority": "medium",
+                "action": "补仓",
+                "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 处于偏低区间{margin_note}，估值驱动可补",
+                "priority": "high",
             })
-    else:
-        # ── 卖出侧：估值驱动（规则表见 evaluate_sell_advice）──
-        # 成本收益率（cost_diff_pct）在这里只作「确认」与仓位参考，不再单独触发减仓
-        cost_advice.extend(evaluate_sell_advice(
-            cost_diff_pct, blend_pct, window_label, fair_value, current_price, shares))
+            # 建议补仓量：单批基准仓位的 30%，受剩余额度封顶，取整百
+            if total_cost > 0 and base_shares > 0:
+                quota_shares = int(base_shares * remaining_pct / 100)
+                add_shares = min(round(base_shares * 0.3), quota_shares)
+                add_shares = max(add_shares // 100 * 100, 0)
+                if add_shares >= 100:
+                    left_after = max(remaining_pct - (add_shares / base_shares * 100), 0)
+                    cost_advice.append({
+                        "action": f"补 {add_shares} 股",
+                        "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 30%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
+                        "priority": "medium",
+                    })
+    # 分位 >=50（中性或偏贵）时不给补仓建议：既不便宜也没到该动手的位置，沉默比提醒更有用
 
+    # ── 卖出侧：估值驱动，与买入侧对称（规则表见 evaluate_sell_advice）──
+    # 成本收益率在这里只作「确认」与仓位参考，不再单独触发减仓。
+    cost_advice.extend(evaluate_sell_advice(
+        cost_diff_pct, blend_pct, window_label, fair_value, current_price, shares))
     # ── 策略 2.5: 止损/纪律检查（价值派口径：止损看逻辑破坏，不看跌幅本身）──
     stop_advice = []
     drawdown = -cost_diff_pct  # 正数 = 回撤幅度
