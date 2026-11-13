@@ -412,7 +412,8 @@ def fmt_num(v, spec: str = ".2f", dash: str = "—") -> str:
 
 
 def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_label: str,
-                         fair_value: float | None, current_price: float, shares: int) -> list:
+                         fair_value: float | None, current_price: float, shares: int,
+                         quality_grade: str | None = None) -> list:
     """卖出侧建议（纯函数，便于单测）。
 
     规则（按优先级，命中即返）：
@@ -420,6 +421,10 @@ def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_l
           浮盈 >15% → 部分止盈 25%
           浮盈 >5%  → 估值高位减仓 15%
           否则      → 估值高位提示（不动手，等反弹）
+      R1.5 质量不合格（护城河/资本回报两项差）且 分位 ≥70
+          → 质量估值双弱·减仓 15%，**不要求浮盈**：
+            质量差的公司贵了就该走，那笔浮盈是运气不是公司创造的价值。
+            分位 <70 时不主动卖（便宜货可以等），避免把「便宜但烂」的仓位在低位割掉。
       R2 分位 ≥70（偏贵）
           浮盈 >15% 且 现价高于合理估值(含缓冲) → 部分止盈 25%
           浮盈 >15% 但未超合理估值             → 浮盈提示，不构成卖点
@@ -438,7 +443,17 @@ def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_l
     fair_txt = f"，合理估值 {fmt_num(fair_value)}" if fair_value else ""
     premium = (current_price / fair_value - 1) * 100 if fair_value else None
     above_fair = premium is not None and premium >= SELL_ABOVE_FAIR_PREMIUM
-    above_fair_txt = f"现价高于合理估值 {premium:.0f}%" if above_fair else "现价未高于合理估值"
+    # 文案要区分「高于但不显著」：补仓侧只要 >0 就说「高于合理估值 X%」，
+    # 若这里说「未高于」，同一只票会出现「高于 4.9%」和「未高于」两句打架
+    # （招行实录：溢价 4.9% < 5% 缓冲线，两侧口径不同）。
+    if premium is None:
+        above_fair_txt = "合理估值缺失"
+    elif above_fair:
+        above_fair_txt = f"现价高于合理估值 {premium:.1f}%"
+    elif premium > 0:
+        above_fair_txt = f"现价高于合理估值 {premium:.1f}%（未到 {SELL_ABOVE_FAIR_PREMIUM:.0f}% 缓冲线）"
+    else:
+        above_fair_txt = f"现价低于合理估值 {abs(premium):.1f}%"
 
     sell_full = max(round(shares * 0.25), 0)    # 部分止盈 25%
     sell_mid = max(round(shares * 0.15), 0)     # 估值高位减仓 15%
@@ -467,6 +482,27 @@ def evaluate_sell_advice(cost_diff_pct: float, blend_pct: float | None, window_l
                   f"估值分位 {pct_txt} 处于历史高位，但浮盈仅 {cost_diff_pct:.1f}%（未到 5% 动手线）；"
                   f"反弹即分批减，别等回撤",
                   "medium", "估值驱动")
+
+    # ── R1.5 质量闸门：质量不合格 + 估值偏贵 → 直接减仓，不等浮盈确认 ──
+    # 为什么脱离浮盈：浮盈是你买得早，不代表公司还在创造价值。
+    # 质量两项不达标（护城河 / ROIC 跑赢年数 / 股东回报 三项里两项差）的公司，
+    # 估值偏贵时的正确动作是减，而不是「等涨到 15% 再说」。
+    # 只对分位 ≥70 生效：分位低时即使质量差也不主动卖，避免低位割掉便宜货。
+    if quality_grade == "poor" and blend_pct is not None and blend_pct >= SELL_PCT_HIGH:
+        # 若浮盈条件已满足 R2 的卖出触发（浮盈 >15% 且现价超合理估值），交给 R2：
+        # 那种情况 R2 减 25%，比这里的 15% 更彻底 —— 质量差不该反而减得更少。
+        # R1.5 只兜住「原规则不会动手」的情形（浮亏、浮盈小、未超合理估值）。
+        _r2_would_sell = cost_diff_pct > SELL_PROFIT_CONFIRM and above_fair
+        if not _r2_would_sell:
+            out = mk("质量估值双弱·减仓",
+                     f"估值分位 {pct_txt} 偏高{fair_txt and '，' + fair_txt[1:]}，"
+                     f"且质量不合格（护城河/资本回报不达标）；浮盈 {cost_diff_pct:.1f}% 只是佐证——"
+                     f"质量差的公司贵了就该减，别陪它走下坡路",
+                     "high", "估值驱动")
+            out.append({"action": f"卖 {sell_mid} 股",
+                        "reason": f"卖出 {sell_mid} 股（约 15% 仓位）：质量不合格 + 估值偏高，两个理由叠加",
+                        "priority": "medium", "trigger": "估值驱动"})
+            return out
 
     if blend_pct is not None and blend_pct >= SELL_PCT_HIGH:
         if cost_diff_pct > SELL_PROFIT_CONFIRM and above_fair:
@@ -672,6 +708,15 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     blend_pct = blend10 if blend10 is not None else blend5
     window_label = "10年" if blend10 is not None else "5年"
 
+    # 统一新股闸门：只要样本不足 1 年，无论分位是从哪个窗口来的都作废。
+    # 原来只在「全历史兜底」那一支检查，若数据源直接给了 5y 分位就绕过去了 ——
+    # 长鑫科技式的假分位只要换条路径就能复活。
+    _hy = (val or {}).get("history_years")
+    if blend_pct is not None and _hy is not None and _hy < 1.0:
+        blend_pct = None
+        window_label = ""
+        history_too_short = True
+
     pe_pct_all = val.get("pe_pct_all")
     pb_pct_all = val.get("pb_pct_all")
     eff_pe_all = pe_pct_all if (pe is not None and pe > 0) else None
@@ -824,23 +869,36 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                         "reason": f"当前持有 {shares} 股，建议补 {add_shares} 股（基准的 {frac*100:.0f}%，剩余额度 {remaining_pct:.0f}%，补后剩 {left_after:.0f}%）",
                         "priority": "medium",
                     })
-    elif quality and (quality.get("grade") == "poor") and blend_pct is not None:
-        # 分位中性但质量不合格：沉默会让用户以为「没问题」。
-        # 这类票（如阿里：10年样本只有 6.96 年，真实 5 年分位 54.6%、无护城河、ROIC 跑输）
-        # 的正确结论不是「等跌」，而是「连等都不值得重仓」，要明说。
-        why = "、".join([w for w in (quality.get("warnings") or []) if "护城河评级" not in w]) or "质量不合格"
-        prem = (f"，现价还高于合理估值 {fair_premium_pct:.1f}%" if (fair_premium_pct is not None and fair_premium_pct > 0) else "")
-        cost_advice.append({
-            "action": "估值中性·质量不合格",
-            "reason": f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 属中间位置，谈不上便宜{prem}；且{why}——不建议加仓",
-            "priority": "medium",
-        })
+    # 「估值中性·质量不合格」不在这里给 —— 必须等卖出侧算完再判断，
+    # 否则分位 50~70 且浮盈高时会同时出现「估值中性」和「部分止盈」，自相矛盾。
     # 分位 >=50（中性或偏贵）且质量不差时不给补仓建议：既不便宜也没到该动手的位置，沉默比提醒更有用
 
     # ── 卖出侧：估值驱动，与买入侧对称（规则表见 evaluate_sell_advice）──
     # 成本收益率在这里只作「确认」与仓位参考，不再单独触发减仓。
     cost_advice.extend(evaluate_sell_advice(
-        cost_diff_pct, blend_pct, window_label, fair_value, current_price, shares))
+        cost_diff_pct, blend_pct, window_label, fair_value, current_price, shares,
+        quality_grade=(quality or {}).get("grade")))
+
+    # ── 中性分位 + 质量差的补充结论（必须在卖出侧之后判断）──
+    # 只有「卖出侧也没有动作」时才给，否则会和「部分止盈」同时出现，
+    # 同一只票一边说估值中性、一边让你卖，读起来就是自相矛盾。
+    _has_sell_act = any(
+        a["action"].startswith("卖") or (("止盈" in a["action"] or "减仓" in a["action"])
+                                         and "不减仓" not in a["action"])
+        for a in cost_advice
+    )
+    if (not _has_sell_act and quality and quality.get("grade") == "poor"
+            and blend_pct is not None and SELL_PCT_NEUTRAL <= blend_pct < SELL_PCT_HIGH):
+        why = "、".join([w for w in (quality.get("warnings") or [])
+                         if "护城河评级" not in w]) or "质量不合格"
+        prem = (f"，现价还高于合理估值 {fair_premium_pct:.1f}%"
+                if (fair_premium_pct is not None and fair_premium_pct > 0) else "")
+        cost_advice.append({
+            "action": "估值中性·质量不合格",
+            "reason": (f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 属中间位置，谈不上便宜{prem}；"
+                       f"且{why}——不建议加仓"),
+            "priority": "medium",
+        })
     # ── 策略 2.5: 止损/纪律检查（价值派口径：止损看逻辑破坏，不看跌幅本身）──
     stop_advice = []
     drawdown = -cost_diff_pct  # 正数 = 回撤幅度

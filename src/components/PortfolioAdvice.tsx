@@ -32,6 +32,19 @@ interface AdviceItem {
   priority: "high" | "medium" | "low" | "info";
 }
 
+/** 质量评估（护城河 / ROIC 跑赢年数 / 股东总回报 三维投票的结果） */
+interface QualityInfo {
+  grade: "good" | "fair" | "poor";
+  rating: string | null;          // wide / narrow / none
+  ratingLabel: string | null;     // 宽护城河 / 窄护城河 / 无护城河
+  score: number | null;           // 0-100 护城河评分
+  roic: number | null;
+  yearsAboveWacc: number | null;  // 5 年里几年 ROIC 高于资金成本
+  shareholderYield: number | null;// 股息 + 回购
+  gmTrend: number | null;         // 毛利率 5 年变化（pp）
+  warnings: string[];
+}
+
 interface StockAdvice {
   stockCode: string;
   stockName: string;
@@ -52,6 +65,7 @@ interface StockAdvice {
   gridStep: number;
   gridLevels: Array<{ type: "buy" | "sell"; price: number; drop_pct?: number; rise_pct?: number; label: string }>;
   operations: AdviceItem[];
+  quality?: QualityInfo | null;
   adviceSummary: {
     costAdvice: AdviceItem[];
     dividendAdvice: AdviceItem[];
@@ -168,6 +182,15 @@ export default function PortfolioAdvice({ stockDataMap }: PortfolioAdviceProps) 
                   <Text type="secondary" style={{ fontSize: 11, fontFamily: "var(--font-geist-mono)" }}>
                     {item.stockCode}
                   </Text>
+                  {/* 质量徽章：poor 必须显眼（补仓会减半、估值贵时优先减仓），good 也给正反馈；fair 不标避免噪音 */}
+                  {item.quality && item.quality.grade !== "fair" && (
+                    <Tag
+                      color={item.quality.grade === "poor" ? "red" : "green"}
+                      style={{ fontSize: 10, lineHeight: "16px" }}
+                    >
+                      {item.quality.grade === "poor" ? "质量差" : "质量好"}
+                    </Tag>
+                  )}
                   {item.operations.filter((o) => o.priority === "high").length > 0 && (
                     <Tag color="red" style={{ fontSize: 10, lineHeight: "16px" }}>
                       {item.operations.filter((o) => o.priority === "high").length} 条重点
@@ -249,6 +272,31 @@ export default function PortfolioAdvice({ stockDataMap }: PortfolioAdviceProps) 
                       label: <Text type="secondary" style={{ fontSize: 12 }}>详细分析 ↓</Text>,
                       children: (
                         <div>
+                          {item.quality && (
+                            <div style={{ marginBottom: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>🏰 质量评估</Text>
+                              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                                • {item.quality.ratingLabel || "—"}
+                                {item.quality.score != null && `（${item.quality.score.toFixed(0)} 分）`}
+                                {item.quality.roic != null && `｜ROIC ${item.quality.roic.toFixed(1)}%`}
+                                {item.quality.yearsAboveWacc != null &&
+                                  `｜5 年里 ${item.quality.yearsAboveWacc} 年跑赢资金成本`}
+                                {item.quality.shareholderYield != null &&
+                                  `｜股东总回报 ${item.quality.shareholderYield.toFixed(2)}%`}
+                              </div>
+                              {item.quality.warnings.map((w, i) => (
+                                <div key={i} style={{ fontSize: 12, color: "#d97706", marginTop: 2 }}>
+                                  ⚠️ {w}
+                                </div>
+                              ))}
+                              {item.quality.grade === "poor" && (
+                                <div style={{ fontSize: 12, color: "#dc2626", marginTop: 2 }}>
+                                  质量不合格：护城河/资本回报/股东回报三项里两项不达标，
+                                  补仓建议会降级并减半，估值贵时优先减仓
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {item.adviceSummary.costAdvice.length > 0 && (
                             <div style={{ marginBottom: 8 }}>
                               <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>📊 成本策略</Text>
