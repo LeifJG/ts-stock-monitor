@@ -798,6 +798,17 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
     elif blend_pct is not None and blend_pct < 50:
         # 估值确实进到偏低区，再看安全边际 / 补仓额度 / 加仓间距
         if fair_premium_pct is not None and fair_premium_pct > 0:
+            # 把短周期分位一并说清：只报「10年分位 30% 偏低」会让人以为是便宜货，
+            # 而招行/美的的 10 年分位是被 2018-2021 高估值拉宽的——它们的 5 年分位
+            # 分别是 52%/78%，近一年分位 77%/66%，短周期根本不便宜。
+            # 只给长期分位会让「估值偏低」和「暂缓补仓」看起来互相打架。
+            _short = ""
+            if blend5 is not None and blend_pct is not None:
+                _gap = blend5 - blend_pct
+                if _gap >= 10:
+                    _short = f"；且 5 年分位 {blend5:.0f}%，短周期本身就不便宜"
+                elif _gap <= -10:
+                    _short = f"；5 年分位 {blend5:.0f}%，短周期比长期更便宜"
             # 质量不合格要一并说清：否则用户会以为「等跌到位就该重仓」，
             # 而质量差的票跌到位也只值得小仓位试探。
             q = quality or {}
@@ -808,7 +819,7 @@ def analyze_position(pos: dict, quote: dict, val: dict | None = None) -> dict:
                     q_warn = f"；且{why}，即使跌到位也只宜小仓位试探"
             cost_advice.append({
                 "action": "暂缓补仓",
-                "reason": (f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低，"
+                "reason": (f"估值分位（{window_label}）{fmt_pct(blend_pct)}% 偏低{_short}，"
                            f"但现价仍高于合理估值 {fair_premium_pct:.1f}%（{fmt_num(fair_value, '.2f')}）"
                            f"——分位低不等于价格便宜，等跌进安全边际再补{q_warn}"),
                 "priority": "medium",
