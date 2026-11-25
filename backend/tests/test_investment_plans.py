@@ -167,3 +167,55 @@ def test_月跌幅达标触发金字塔加码(monkeypatch):
     assert r["monthDropPct"] <= -15
     # 偏离 + 加码 = 至少 2 份（偏离档 2.0 + 加码 1.0）
     assert r["multiplier"] >= 2.0
+
+
+# ── ④ 下次定投日（日报要显示「下次哪天投」）──────────────
+
+def test_下次定投日_本月未到():
+    """15 号计划，今天 5 号 → 下次是本月 15 号"""
+    d = ip.next_due_date({"frequency": "monthly", "dayOfMonth": 15}, date(2026, 11, 5))
+    assert d == date(2026, 11, 15)
+
+
+def test_下次定投日_本月已过则跳下月():
+    d = ip.next_due_date({"frequency": "monthly", "dayOfMonth": 15}, date(2026, 11, 20))
+    assert d == date(2026, 12, 15)
+
+
+def test_下次定投日_当天算下次():
+    """定投日当天，下次定投日就是今天（用户要知道今天该动手）"""
+    d = ip.next_due_date({"frequency": "monthly", "dayOfMonth": 15}, date(2026, 11, 15))
+    assert d == date(2026, 11, 15)
+
+
+def test_下次定投日_设31号时的月末兜底():
+    """设 31 号但 11 月只有 30 天 → 下次是 11-30，不是跳到 12-31"""
+    d = ip.next_due_date({"frequency": "monthly", "dayOfMonth": 31}, date(2026, 11, 5))
+    assert d == date(2026, 11, 30)
+
+
+def test_下次定投日_跨年():
+    """12 月过完 → 次年 1 月"""
+    d = ip.next_due_date({"frequency": "monthly", "dayOfMonth": 10}, date(2026, 12, 20))
+    assert d == date(2027, 1, 10)
+
+
+def test_下次定投日_每周():
+    d = ip.next_due_date({"frequency": "weekly", "dayOfWeek": 0}, date(2026, 11, 25))
+    assert d.weekday() == 0 and d >= date(2026, 11, 25)
+
+
+def test_下次定投日_双周按起算日():
+    plan = {"frequency": "biweekly", "dayOfWeek": 0, "startDate": "2026-11-09"}
+    d = ip.next_due_date(plan, date(2026, 11, 10))
+    # 11-09 是起算周（第 0 周），下一周 11-16 属第 1 周不投，再下周 11-23 是第 2 周
+    assert d == date(2026, 11, 23), f"实际 {d}"
+
+
+def test_evaluate_plan_带出下次定投日(monkeypatch):
+    monkeypatch.setattr(ip, "fetch_index_daily", lambda *a, **k: _rows())
+    monkeypatch.setattr(ip, "fetch_etf_quote",
+                        lambda code: {"code": code, "name": "x", "price": 1, "prevClose": 1,
+                                      "nav": 1, "premiumPct": 0.5, "asOf": ""})
+    r = ip.evaluate_plan(_plan(dayOfMonth=15), today=date(2026, 11, 20))
+    assert r["nextDueDate"] == "2026-12-15"
