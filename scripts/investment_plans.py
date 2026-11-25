@@ -203,6 +203,37 @@ def pick_multiplier(deviation_pct: float, tiers: list[dict]) -> tuple[float, str
     return 1.0, ""
 
 
+def next_due_date(plan: dict, today: date) -> date | None:
+    """下次定投日（含今天）。日报里用户最想知道「下次哪天动手」。"""
+    freq = plan.get("frequency", "monthly")
+    try:
+        if freq == "monthly":
+            target_day = int(plan.get("dayOfMonth", 1))
+            for y, m in ((today.year, today.month), *(
+                (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1),)):
+                last = (date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)).day
+                cand = date(y, m, min(target_day, last))
+                if cand >= today:
+                    return cand
+            return None
+        if freq in ("weekly", "biweekly"):
+            target_wd = int(plan.get("dayOfWeek", 1))
+            start = plan.get("startDate")
+            start_d = datetime.strptime(start, "%Y-%m-%d").date() if start else None
+            for i in range(0, 29):
+                cand = today + timedelta(days=i)
+                if cand.weekday() != target_wd:
+                    continue
+                if freq == "weekly":
+                    return cand
+                if start_d and int((cand - start_d).days / 7) % 2 == 0:
+                    return cand
+            return None
+    except Exception:
+        return None
+    return None
+
+
 def is_due_today(plan: dict, today: date) -> tuple[bool, str]:
     """今天是否定投日"""
     freq = plan.get("frequency", "monthly")
@@ -318,6 +349,8 @@ def evaluate_plan(plan: dict, today: date | None = None,
         "target": plan.get("target"),
         "proxyIndex": idx_code,
         "isDueToday": due,
+        "nextDueDate": (next_due_date(plan, today) or date.min).isoformat()
+                       if next_due_date(plan, today) else None,
         "frequency": freq_txt,
         "action": action,               # buy / skip / wait
         "headline": headline,

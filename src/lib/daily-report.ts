@@ -20,6 +20,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fetchFullStockData } from "@/lib/stock-api";
+import { runPythonScript } from "@/lib/python-runner";
 import { setHkdRate } from "@/lib/stockUtils";
 import {
   normalizePositions,
@@ -344,6 +345,50 @@ export async function generateDailyReport(force = false): Promise<{ content: str
   lines.push("");
   lines.push("---");
   lines.push("");
+
+  // 📅 定投计划 —— 每天报溢价率（场内的确定性成本），失败不拖垮整份日报
+  try {
+    const planRaw = runPythonScript("investment_plans.py", [], { timeout: 90000 });
+    const planData = JSON.parse(planRaw);
+    const plans: any[] = planData.plans ?? [];
+    if (plans.length > 0) {
+      lines.push("─── 📅 定投计划 ───");
+      lines.push("");
+      lines.push("| 计划 | 模式 | 标的 | 当前判断 | 下次定投 |");
+      lines.push("|:---|:---:|:---:|:---|:---:|");
+      for (const p of plans) {
+        const modeTxt = p.mode === "onsite" ? "场内" : "场外";
+        const prem = p.premiumPct == null
+          ? "—"
+          : `${p.premiumPct > 0 ? "+" : ""}${Number(p.premiumPct).toFixed(2)}%`;
+        let verdict: string;
+        if (p.mode === "onsite") {
+          verdict = p.premiumPct != null && p.premiumPct > p.premiumMax
+            ? `🔴 溢价 ${prem} 超上限 ${p.premiumMax}%，不买`
+            : `🟢 溢价 ${prem}（上限 ${p.premiumMax}%）`;
+        } else {
+          verdict = `🟢 按净值申购，无溢价`;
+        }
+        lines.push(`| ${p.name} | ${modeTxt} | ${p.target ?? "—"} | ${verdict} | ${p.nextDueDate ?? "—"} |`);
+      }
+      lines.push("");
+      // 明细去重：多条计划的均线偏离来自同一指数，重复输出没意义
+      const allReasons = Array.from(new Set<string>(plans.flatMap((p: any) => p.reasons ?? [])));
+      for (const r of allReasons) lines.push(`- ${r}`);
+      // 只补「溢价是什么」，场外/限额的说明已由各计划 reasons 提供，这里再说一遍会重复
+      lines.push(`- 溢价率 = 场内市价 ÷ 单位净值 − 1；溢价是**确定性成本**，溢价消失时净值不变、价格回落，那部分实亏`);
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+  } catch (e: any) {
+    lines.push("─── 📅 定投计划 ───");
+    lines.push("");
+    lines.push(`⚠️ 定投数据获取失败：${e?.message ?? e}（其余段落不受影响）`);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+  }
 
   // 📡 市场温度表
   if (indices.length > 0) {
