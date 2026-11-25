@@ -44,3 +44,4 @@ backup/
 
 # 由真实持仓派生的计算基准（含股数与成本，本地生成不入库）
 tests/fixtures/ts_calc_output_real.json
+!data/investment_plans.example.json

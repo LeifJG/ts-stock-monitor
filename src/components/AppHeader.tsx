@@ -46,6 +46,8 @@ interface AppHeaderProps {
   showGrid: boolean;
   showCashBond: boolean;
   onCashBondToggle: () => void;
+  showInvest: boolean;
+  onInvestToggle: () => void;
   onGridToggle: () => void;
   showReport: boolean;
   onReportToggle: () => void;
@@ -71,6 +73,8 @@ export default function AppHeader({
   showGrid,
   showCashBond,
   onCashBondToggle,
+  showInvest,
+  onInvestToggle,
   onGridToggle,
   showReport,
   onReportToggle,
@@ -149,6 +153,12 @@ export default function AppHeader({
       label: "现金与股债比",
       icon: <FundOutlined />,
       onClick: onCashBondToggle,
+    },
+    {
+      key: "invest",
+      label: "定投日历",
+      icon: <CalendarOutlined />,
+      onClick: onInvestToggle,
     },
     {
       key: "grid",
@@ -241,7 +251,7 @@ export default function AppHeader({
 
         {/* 组合 */}
         <Dropdown menu={{ items: portfolioMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small" type={showPortfolio || showIndustry || showGrid || showCashBond ? "primary" : "default"}>
+          <Button size="small" type={showPortfolio || showIndustry || showGrid || showCashBond || showInvest ? "primary" : "default"}>
             <WalletOutlined /> 组合 <DownOutlined style={{ fontSize: 10 }} />
           </Button>
         </Dropdown>

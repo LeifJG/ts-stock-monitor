@@ -1,0 +1,72 @@
+{
+  "_说明": {
+    "purpose": "指数/ETF 定投计划配置。金额、频率、档位全部可改，改完下次跑就生效。",
+    "strategy": "均线偏离定投 + 溢价过滤 + 金字塔加码（见 scripts/investment_plans.py 顶部注释）",
+    "fields": {
+      "id": "唯一标识，命令行 --plan 用它筛选",
+      "name": "显示名",
+      "mode": "onsite=场内ETF（必须查溢价）/ otc=场外基金（按净值申购，看限额不查溢价）",
+      "target": "场内填 ETF 代码；场外填基金代码（仅作记录）",
+      "proxyIndex": "均线参考指数。.NDX=纳斯达克100，.IXIC=纳指综指，000300=沪深300",
+      "baseAmount": "基准定投金额（元/次），实际金额 = baseAmount × 倍数",
+      "frequency": "monthly / weekly / biweekly",
+      "dayOfMonth": "monthly 用：每月几号（设 31 时若当月无 31 号则按月末最后一天）",
+      "dayOfWeek": "weekly / biweekly 用：0=周一 … 4=周五",
+      "startDate": "biweekly 用：起算日，用于判断单双周",
+      "strategy.maWindow": "均线窗口，250 约等于一年",
+      "strategy.tiers": "偏离档位，deviationLte 是「偏离 ≤ 该值」时用 multiplier 倍",
+      "strategy.premiumMax": "场内溢价率上限(%)，超过就不买（QDII 额度紧张时溢价能到 10-20%）",
+      "strategy.goldenDrop": "金字塔加码：近 30 日跌幅达到 monthlyDrop% 时额外加 extraMultiplier 份"
+    },
+    "warning": "溢价是场内的确定性成本：溢价 16% 买入，溢价消失时净值不变价格回落，那 16% 是实亏。场外按净值申购没有这个问题，但要盯申购限额和暂停公告。"
+  },
+
+  "plans": [
+    {
+      "id": "ndx-onsite",
+      "name": "纳指100（场内 ETF）",
+      "enabled": true,
+      "mode": "onsite",
+      "target": "513100",
+      "proxyIndex": ".NDX",
+      "baseAmount": 3000,
+      "frequency": "monthly",
+      "dayOfMonth": 15,
+      "strategy": {
+        "maWindow": 250,
+        "premiumMax": 2.0,
+        "tiers": [
+          { "deviationLte": -10.0, "multiplier": 2.0, "label": "低于均线 10% 以上，加倍投" },
+          { "deviationLte": -5.0, "multiplier": 1.5, "label": "低于均线 5% 以上，加投 50%" },
+          { "deviationLte": 5.0, "multiplier": 1.0, "label": "均线附近，常规投" },
+          { "deviationLte": 999.0, "multiplier": 0.5, "label": "高于均线 5% 以上，减半投" }
+        ],
+        "goldenDrop": { "monthlyDrop": 15, "extraMultiplier": 1.0 }
+      },
+      "history": []
+    },
+    {
+      "id": "ndx-otc",
+      "name": "纳指100（场外 QDII）",
+      "enabled": true,
+      "mode": "otc",
+      "target": "161130",
+      "proxyIndex": ".NDX",
+      "baseAmount": 2000,
+      "frequency": "monthly",
+      "dayOfMonth": 15,
+      "strategy": {
+        "maWindow": 250,
+        "premiumMax": 2.0,
+        "tiers": [
+          { "deviationLte": -10.0, "multiplier": 2.0, "label": "低于均线 10% 以上，加倍投" },
+          { "deviationLte": -5.0, "multiplier": 1.5, "label": "低于均线 5% 以上，加投 50%" },
+          { "deviationLte": 5.0, "multiplier": 1.0, "label": "均线附近，常规投" },
+          { "deviationLte": 999.0, "multiplier": 0.5, "label": "高于均线 5% 以上，减半投" }
+        ],
+        "goldenDrop": { "monthlyDrop": 15, "extraMultiplier": 1.0 }
+      },
+      "history": []
+    }
+  ]
+}

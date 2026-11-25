@@ -35,6 +35,7 @@ import IndustryDiversity from "@/components/IndustryDiversity";
 import DividendCalendar from "@/components/DividendCalendar";
 import GridTradingPanel from "@/components/GridTradingPanel";
 import CashBondPanel from "@/components/CashBondPanel";
+import InvestmentCalendar from "@/components/InvestmentCalendar";
 import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
@@ -60,6 +61,7 @@ export default function Home() {
   const [showIndustry, setShowIndustry] = useLocalStorage("ts-stock-monitor:showIndustry", false);
   const [showGrid, setShowGrid] = useLocalStorage("ts-stock-monitor:showGrid", false);
   const [showCashBond, setShowCashBond] = useLocalStorage("ts-stock-monitor:showCashBond", false);
+  const [showInvest, setShowInvest] = useLocalStorage("ts-stock-monitor:showInvest", false);
   const [showReport, setShowReport] = useLocalStorage("ts-stock-monitor:showReport", false);
   const [showNotes, setShowNotes] = useState(false);
   const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
@@ -119,6 +121,7 @@ export default function Home() {
     const map: Record<string, () => void> = {
       portfolio: () => setShowPortfolio(true),
       cashbond: () => setShowCashBond(true),
+      invest: () => setShowInvest(true),
       alerts: () => setShowAlertPanel(true),
       grid: () => setShowGrid(true),
       calendar: () => setShowCalendar(true),
@@ -131,7 +134,7 @@ export default function Home() {
     for (const key of raw.split(",").map((s) => s.trim().toLowerCase())) {
       map[key]?.();
     }
-  }, [setShowPortfolio, setShowCashBond, setShowAlertPanel, setShowGrid, setShowCalendar, setShowIndustry, setShowCalculator]);
+  }, [setShowPortfolio, setShowCashBond, setShowInvest, setShowAlertPanel, setShowGrid, setShowCalendar, setShowIndustry, setShowCalculator]);
 
   useEffect(() => { fetchIndices(); }, [fetchIndices]);
 
@@ -205,6 +208,8 @@ export default function Home() {
         onGridToggle={() => setShowGrid(!showGrid)}
         showCashBond={showCashBond}
         onCashBondToggle={() => setShowCashBond(!showCashBond)}
+        showInvest={showInvest}
+        onInvestToggle={() => setShowInvest(!showInvest)}
         showReport={showReport}
         onReportToggle={() => setShowReport(true)}
         showNotes={showNotes}
@@ -273,6 +278,13 @@ export default function Home() {
       {showCashBond && (
         <section style={{ marginBottom: 16 }}>
           <CashBondPanel />
+        </section>
+      )}
+
+      {/* ═══ 定投日历 ═══ */}
+      {showInvest && (
+        <section style={{ marginBottom: 16 }}>
+          <InvestmentCalendar />
         </section>
       )}
 
