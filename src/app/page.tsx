@@ -6,7 +6,10 @@
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import { Button, Input, Tag, Flex, Badge, Space } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined, WalletOutlined, PieChartOutlined, FundOutlined, CalendarOutlined,
+  LineChartOutlined, CalculatorOutlined, BellOutlined, FileTextOutlined, EditOutlined,
+} from "@ant-design/icons";
 import { useStockData } from "@/hooks/useStockData";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -36,6 +39,7 @@ import DividendCalendar from "@/components/DividendCalendar";
 import GridTradingPanel from "@/components/GridTradingPanel";
 import CashBondPanel from "@/components/CashBondPanel";
 import InvestmentCalendar from "@/components/InvestmentCalendar";
+import SideNav from "@/components/SideNav";
 import DataManager from "@/components/DataManager";
 import DailyReport from "@/components/DailyReport";
 import PortfolioMiniCard from "@/components/PortfolioMiniCard";
@@ -189,8 +193,15 @@ export default function Home() {
   }, [setWatchlist]);
 
   return (
-    <div style={{ maxWidth: 1600, margin: "0 auto", padding: "24px 24px 48px" }}>
-      {/* ═══ 头部（重构：分组下拉） ═══ */}
+    // 左右分栏：主内容自适应 + 右侧固定导航栏。
+    // 原来 maxWidth 1600 居中，宽屏两侧大片留白，模块入口还藏着下拉菜单里。
+    <div style={{
+      display: "flex", gap: 18, alignItems: "flex-start",
+      maxWidth: 1880, margin: "0 auto", padding: "20px 20px 48px",
+    }}>
+      {/* ═══ 主内容区 ═══ */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* ═══ 头部 ═══ */}
       <AppHeader
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -389,6 +400,50 @@ export default function Home() {
       ) : (
         <StockList data={data} triggers={triggers} loading={loading} error={error} insiderTrades={insiderTrades} insiderBuybacks={insiderBuybacks} dividendHistory={dividendHistory} />
       )}
+      </div>
+      {/* ↑ 主内容区结束 */}
+
+      {/* ═══ 右侧导航栏（sticky：滚动时始终可见） ═══ */}
+      <div style={{ position: "sticky", top: 20, flexShrink: 0 }}>
+        <SideNav
+          groups={[
+            {
+              title: "组合",
+              items: [
+                { key: "portfolio", label: "持仓管理", icon: "📋", active: showPortfolio, onToggle: () => setShowPortfolio(!showPortfolio) },
+                { key: "industry", label: "行业分散度", icon: "🥧", active: showIndustry, onToggle: () => setShowIndustry(!showIndustry) },
+                { key: "cashbond", label: "现金与股债比", icon: "💰", active: showCashBond, onToggle: () => setShowCashBond(!showCashBond) },
+                { key: "invest", label: "定投日历", icon: "📅", active: showInvest, onToggle: () => setShowInvest(!showInvest) },
+                { key: "grid", label: "网格交易", icon: "📈", active: showGrid, onToggle: () => setShowGrid(!showGrid) },
+              ],
+            },
+            {
+              title: "工具",
+              items: [
+                { key: "calendar", label: "分红日历", icon: "🗓", active: showCalendar, onToggle: () => setShowCalendar(!showCalendar) },
+                { key: "calculator", label: "分红计算器", icon: "🧮", active: showCalculator, onToggle: () => setShowCalculator(!showCalculator) },
+                { key: "notes", label: "交易笔记", icon: "📝", active: showNotes, onToggle: () => setShowNotes(!showNotes), modal: true },
+                { key: "report", label: "收盘日报", icon: "📄", active: showReport, onToggle: () => setShowReport(!showReport), modal: true },
+              ],
+            },
+            {
+              title: "预警",
+              items: [
+                { key: "alerts", label: "预警管理", icon: "🔔", active: showAlertPanel, onToggle: () => setShowAlertPanel(!showAlertPanel), badge: triggers.length },
+              ],
+            },
+          ]}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onSyncClick={() => setShowPortfolio(true)}
+          activeCount={[showPortfolio, showIndustry, showCashBond, showInvest, showGrid, showCalendar, showCalculator, showAlertPanel].filter(Boolean).length}
+          onCollapseAll={() => {
+            setShowPortfolio(false); setShowIndustry(false); setShowCashBond(false);
+            setShowInvest(false); setShowGrid(false); setShowCalendar(false);
+            setShowCalculator(false); setShowAlertPanel(false);
+          }}
+        />
+      </div>
     </div>
   );
 }

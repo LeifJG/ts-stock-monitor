@@ -85,6 +85,12 @@ export default function AppHeader({
 }: AppHeaderProps) {
   const { isDark, toggleTheme } = useTheme();
 
+  // 原来按钮高亮是「组内任意一个开着就整体变色」，看不出具体哪个开了。
+  // 现在：按钮显示开启数量，菜单项前加 ✓ 标出是哪几个。
+  const portfolioOpen = [showPortfolio, showIndustry, showGrid, showCashBond, showInvest].filter(Boolean).length;
+  const toolsOpen = [showNotes, showCalculator, showCalendar, showReport].filter(Boolean).length;
+  const mark = (on: boolean, label: string) => (on ? `✓ ${label}` : label);
+
   // ── 行情菜单 ──────────────────────────────────────────────
   const marketMenu: MenuProps["items"] = [
     {
@@ -132,7 +138,7 @@ export default function AppHeader({
   const portfolioMenu: MenuProps["items"] = [
     {
       key: "portfolio",
-      label: "持仓管理",
+      label: mark(showPortfolio, "持仓管理"),
       icon: <WalletOutlined />,
       onClick: onPortfolioToggle,
     },
@@ -144,25 +150,25 @@ export default function AppHeader({
     },
     {
       key: "industry",
-      label: "行业分布",
+      label: mark(showIndustry, "行业分布"),
       icon: <PieChartOutlined />,
       onClick: onIndustryToggle,
     },
     {
       key: "cashbond",
-      label: "现金与股债比",
+      label: mark(showCashBond, "现金与股债比"),
       icon: <FundOutlined />,
       onClick: onCashBondToggle,
     },
     {
       key: "invest",
-      label: "定投日历",
+      label: mark(showInvest, "定投日历"),
       icon: <CalendarOutlined />,
       onClick: onInvestToggle,
     },
     {
       key: "grid",
-      label: "网格交易",
+      label: mark(showGrid, "网格交易"),
       icon: <LineChartOutlined />,
       onClick: onGridToggle,
     },
@@ -172,27 +178,27 @@ export default function AppHeader({
   const toolsMenu: MenuProps["items"] = [
     {
       key: "notes",
-      label: "交易笔记",
+      label: mark(showNotes, "交易笔记"),
       icon: <EditOutlined />,
       onClick: onNotesToggle,
     },
     { type: "divider" },
     {
       key: "calculator",
-      label: "分红计算器",
+      label: mark(showCalculator, "分红计算器"),
       icon: <CalculatorOutlined />,
       onClick: onCalculatorToggle,
     },
     {
       key: "calendar",
-      label: "分红日历",
+      label: mark(showCalendar, "分红日历"),
       icon: <CalendarOutlined />,
       onClick: onCalendarToggle,
     },
     { type: "divider" },
     {
       key: "report",
-      label: "收盘日报",
+      label: mark(showReport, "收盘日报"),
       icon: <FileTextOutlined />,
       onClick: onReportToggle,
     },
@@ -242,26 +248,7 @@ export default function AppHeader({
           {viewMode === "table" ? "表格" : "卡片"}
         </span>
 
-        {/* 行情 */}
-        <Dropdown menu={{ items: marketMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small">
-            <BarChartOutlined /> 行情 <DownOutlined style={{ fontSize: 10 }} />
-          </Button>
-        </Dropdown>
-
-        {/* 组合 */}
-        <Dropdown menu={{ items: portfolioMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small" type={showPortfolio || showIndustry || showGrid || showCashBond || showInvest ? "primary" : "default"}>
-            <WalletOutlined /> 组合 <DownOutlined style={{ fontSize: 10 }} />
-          </Button>
-        </Dropdown>
-
-        {/* 工具 */}
-        <Dropdown menu={{ items: toolsMenu }} placement="bottomRight" trigger={["click"]}>
-          <Button size="small" type={showNotes || showCalculator || showCalendar || showReport ? "primary" : "default"}>
-            <CalculatorOutlined /> 工具 <DownOutlined style={{ fontSize: 10 }} />
-          </Button>
-        </Dropdown>
+        {/* 视图/模块入口已迁到右侧 SideNav —— 顶栏只留标题、主题、数据管理 */}
 
         <div style={{ width: 1, height: 20, background: "var(--border-color)", margin: "0 2px" }} />
 
