@@ -51,15 +51,29 @@ export default function InvestmentCalendar() {
   const [plans, setPlans] = useState<PlanResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 后端有 30 分钟缓存，这里如实显示「数据是刚算的还是缓存里的」
+  const [meta, setMeta] = useState<{
+    cached: boolean; cacheAgeSec: number; stale?: boolean; warning?: string;
+  } | null>(null);
 
-  const load = useCallback(async () => {
+  // force=true 时带 ?force=1 绕过服务端 30 分钟缓存
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/investment-plans", { cache: "no-store" });
+      const res = await fetch(
+        `/api/investment-plans${force ? "?force=1" : ""}`,
+        { cache: "no-store" }
+      );
       const json = await res.json();
       if (!res.ok || json.success === false) throw new Error(json.error || `HTTP ${res.status}`);
       setPlans(json.plans || []);
+      setMeta({
+        cached: !!json.cached,
+        cacheAgeSec: Number(json.cacheAgeSec ?? 0),
+        stale: json.stale,
+        warning: json.warning,
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -103,9 +117,24 @@ export default function InvestmentCalendar() {
         <Text strong style={{ fontSize: 15 }}>
           <CalendarOutlined /> 定投日历
         </Text>
-        <Tooltip title="重新取数（指数日线有 12 小时缓存，溢价率实时）">
-          <ReloadOutlined onClick={load} spin={loading} style={{ cursor: "pointer" }} />
-        </Tooltip>
+        <Flex align="center" gap={10}>
+          {meta && (
+            <Text
+              type={meta.stale ? "warning" : "secondary"}
+              style={{ fontSize: 10.5 }}
+              title={meta.warning}
+            >
+              {meta.stale
+                ? `⚠️ ${meta.warning}`
+                : meta.cached
+                ? `缓存 · ${Math.max(1, Math.round(meta.cacheAgeSec / 60))} 分钟前算的`
+                : "刚更新"}
+            </Text>
+          )}
+          <Tooltip title="强制重算（跳过 30 分钟缓存）">
+            <ReloadOutlined onClick={() => load(true)} spin={loading} style={{ cursor: "pointer" }} />
+          </Tooltip>
+        </Flex>
       </Flex>
 
       <Row gutter={[12, 12]}>
